@@ -7,7 +7,7 @@ Handles login, logout, and user registration.
 
 import logging
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 from app.services.proxmox_service import get_clusters_from_db
 
@@ -173,6 +173,60 @@ def setup():
             error = f"Failed to save cluster configuration: {str(e)}"
     
     return render_template("setup.html", error=error, success=success)
+
+
+@auth_bp.route("/setup/test-connection", methods=["POST"])
+def setup_test_connection():
+    """Test Proxmox connectivity for first-time setup without saving configuration."""
+    from app.services.proxmox_service import create_proxmox_connection
+
+    # This endpoint is intended for first-time setup only.
+    if get_clusters_from_db():
+        return jsonify({"ok": False, "error": "Setup has already been completed."}), 403
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    host = (payload.get("host") or "").strip()
+    user = (payload.get("user") or "").strip()
+    password = payload.get("password") or ""
+    port_raw = payload.get("port", 8006)
+    verify_ssl_raw = payload.get("verify_ssl", False)
+
+    if isinstance(verify_ssl_raw, str):
+        verify_ssl = verify_ssl_raw.lower() in {"1", "true", "yes", "on"}
+    else:
+        verify_ssl = bool(verify_ssl_raw)
+
+    if not host or not user or not password:
+        return jsonify({
+            "ok": False,
+            "error": "Host, user, and password are required for connection test.",
+        }), 400
+
+    try:
+        port = int(port_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Port must be a valid number."}), 400
+
+    test_cluster = {
+        "host": host,
+        "user": user,
+        "password": password,
+        "port": port,
+        "verify_ssl": verify_ssl,
+    }
+
+    try:
+        proxmox = create_proxmox_connection(test_cluster, timeout=10)
+        version_info = proxmox.version.get() or {}
+        return jsonify({
+            "ok": True,
+            "message": "Connection successful.",
+            "version": version_info,
+        })
+    except Exception as exc:
+        logger.warning("Setup connection test failed for host %s: %s", host, exc)
+        return jsonify({"ok": False, "error": str(exc)}), 502
 
 
 @auth_bp.route("/logout")

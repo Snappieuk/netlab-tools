@@ -98,10 +98,75 @@
                             <small class="form-text text-muted">Proxmox group for admin users</small>
                         </div>
 
-                        <button type="submit" class="btn btn-primary btn-lg w-100">
-                            <i class="ti ti-circle-check"></i> Complete Setup
-                        </button>
+                        <div id="connection-test-result" class="mt-3"></div>
+
+                        <div class="d-grid gap-2 mt-3">
+                            <button type="button" class="btn btn-outline-primary" id="test-connection-btn">
+                                <i class="ti ti-plug-connected"></i> Test Connection
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="ti ti-circle-check"></i> Complete Setup
+                            </button>
+                        </div>
                     </form>
+
+                    <script>
+                    (function () {
+                        const testBtn = document.getElementById('test-connection-btn');
+                        const resultEl = document.getElementById('connection-test-result');
+
+                        function setResult(ok, text) {
+                            const level = ok ? 'success' : 'danger';
+                            resultEl.innerHTML = '<div class="alert alert-' + level + ' mb-0">' + text + '</div>';
+                        }
+
+                        async function testConnection() {
+                            const host = document.getElementById('host').value.trim();
+                            const port = document.getElementById('port').value.trim();
+                            const user = document.getElementById('user').value.trim();
+                            const password = document.getElementById('password').value;
+                            const verifySsl = document.getElementById('verify_ssl').checked;
+
+                            if (!host || !user || !password) {
+                                setResult(false, 'Please fill Host, Admin Username, and Admin Password before testing.');
+                                return;
+                            }
+
+                            testBtn.disabled = true;
+                            testBtn.innerHTML = '<i class="ti ti-loader-2"></i> Testing...';
+                            setResult(true, 'Testing connection to Proxmox...');
+
+                            try {
+                                const response = await fetch('{{ url_for("auth.setup_test_connection") }}', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        host,
+                                        port,
+                                        user,
+                                        password,
+                                        verify_ssl: verifySsl,
+                                    }),
+                                });
+
+                                const data = await response.json();
+                                if (response.ok && data.ok) {
+                                    const version = data.version && data.version.version ? data.version.version : 'unknown';
+                                    setResult(true, 'Connection successful. Proxmox version: ' + version);
+                                } else {
+                                    setResult(false, 'Connection failed: ' + (data.error || 'Unknown error'));
+                                }
+                            } catch (error) {
+                                setResult(false, 'Connection test request failed: ' + error.message);
+                            } finally {
+                                testBtn.disabled = false;
+                                testBtn.innerHTML = '<i class="ti ti-plug-connected"></i> Test Connection';
+                            }
+                        }
+
+                        testBtn.addEventListener('click', testConnection);
+                    })();
+                    </script>
                     {% endif %}
                 </div>
             </div>
