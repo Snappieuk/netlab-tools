@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Proxmox Lab GUI / Netlab Tools - One-Command Updater
-# Usage: curl -sSL https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/update.sh | sudo bash
+# Usage: curl -sSL https://raw.githubusercontent.com/Snappieuk/netlab-tools/main/update.sh | sudo bash
 #
 
 set -Eeuo pipefail

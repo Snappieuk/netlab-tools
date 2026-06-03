@@ -1,8 +1,8 @@
 #!/bin/bash
 #
 # Proxmox Lab GUI - One-Command Installer
-# Usage: curl -sSL https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/install.sh | bash
-# Or: wget -qO- https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/Snappieuk/netlab-tools/main/install.sh | bash
+# Or: wget -qO- https://raw.githubusercontent.com/Snappieuk/netlab-tools/main/install.sh | bash
 # Or: bash install.sh
 #
 
@@ -32,7 +32,7 @@ APP_DIR="/opt/proxmox-lab-gui"
 SERVICE_NAME="proxmox-gui"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 VENV_DIR="${APP_DIR}/venv"
-REPO_URL="https://github.com/Snappieuk/proxmox-lab-gui.git"
+REPO_URL="https://github.com/Snappieuk/netlab-tools.git"
 
 echo -e "${BLUE}========================================================${NC}"
 echo -e "${BLUE}      Proxmox Lab GUI - Automated Installer${NC}"
@@ -230,7 +230,7 @@ cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Proxmox Lab GUI - Web Portal for VM Management
 After=network.target
-Documentation=https://github.com/Snappieuk/proxmox-lab-gui
+Documentation=https://github.com/Snappieuk/netlab-tools
 
 [Service]
 Type=simple

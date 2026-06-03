@@ -50,10 +50,10 @@ Install and auto-start with systemd in one command:
 
 ```bash
 # Download and run installer
-curl -sSL https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Snappieuk/netlab-tools/main/install.sh | sudo bash
 
 # Or if you prefer wget
-wget -qO- https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/install.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/Snappieuk/netlab-tools/main/install.sh | sudo bash
 ```
 
 **What it does:**
@@ -79,7 +79,7 @@ wget -qO- https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/insta
 Fastest way (one command):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/update.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Snappieuk/netlab-tools/main/update.sh | sudo bash
 ```
 
 Manual equivalent:
