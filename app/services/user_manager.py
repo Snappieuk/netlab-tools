@@ -114,13 +114,38 @@ def _get_admin_group_members_cached(admin_group: str) -> List[str]:
     try:
         from app.services.proxmox_service import get_proxmox_admin
         grp = get_proxmox_admin().access.groups(admin_group).get()
-        raw_members = (grp.get("members", []) or []) if isinstance(grp, dict) else []
-        members = []
-        for m in raw_members:
-            if isinstance(m, str):
-                members.append(m)
-            elif isinstance(m, dict) and "userid" in m:
-                members.append(m["userid"])
+        members: List[str] = []
+
+        # Proxmox group payloads vary by endpoint/version.
+        # Support common variants:
+        # - {"members": ["user@pam", ...]}
+        # - {"members": [{"userid": "user@pam"}, ...]}
+        # - {"users": "user1@pam,user2@pve"}
+        # - {"users": ["user@pam", ...]}
+        if isinstance(grp, dict):
+            raw_members = grp.get("members")
+            if isinstance(raw_members, list):
+                for m in raw_members:
+                    if isinstance(m, str):
+                        members.append(m)
+                    elif isinstance(m, dict) and "userid" in m:
+                        members.append(str(m["userid"]))
+            elif isinstance(raw_members, str):
+                members.extend([u.strip() for u in raw_members.split(",") if u.strip()])
+
+            raw_users = grp.get("users")
+            if isinstance(raw_users, str):
+                members.extend([u.strip() for u in raw_users.split(",") if u.strip()])
+            elif isinstance(raw_users, list):
+                for u in raw_users:
+                    if isinstance(u, str):
+                        members.append(u)
+                    elif isinstance(u, dict) and "userid" in u:
+                        members.append(str(u["userid"]))
+
+        # Deduplicate while preserving order.
+        seen = set()
+        members = [m for m in members if not (m in seen or seen.add(m))]
         
         # Update cache (thread-safe write)
         with _admin_group_lock:
@@ -150,12 +175,19 @@ def _user_in_group(user: str, groupid: str) -> bool:
         return False
 
     # Accept both realm variants for matching
-    variants = {user}
+    user_normalized = user.strip().lower()
+    members_normalized = {m.strip().lower() for m in members if isinstance(m, str) and m.strip()}
+
+    variants = {user_normalized}
     if "@" in user:
-        name, realm = user.split("@", 1)
+        name, realm = user_normalized.split("@", 1)
         for r in ("pam", "pve"):
             variants.add(f"{name}@{r}")
-    return any(u in members for u in variants)
+    else:
+        variants.add(f"{user_normalized}@pam")
+        variants.add(f"{user_normalized}@pve")
+
+    return any(u in members_normalized for u in variants)
 
 
 def is_admin_user(user: str) -> bool:
@@ -163,11 +195,10 @@ def is_admin_user(user: str) -> bool:
     
     Admin if:
     1. User is listed in configured admin users
-    2. User authenticated via Proxmox AND is in ADMIN_GROUP (if configured)
+    2. User authenticated via Proxmox (any realm account)
     3. Local database user with role='adminer'
     
-    Note: Unlike the old design, not ALL Proxmox users are admins.
-    Only Proxmox users in the ADMIN_GROUP (default: 'adminers') are admins.
+    Design policy: any Proxmox-authenticated account is an admin by default.
     """
     if not user:
         return False
@@ -188,24 +219,10 @@ def is_admin_user(user: str) -> bool:
     except Exception as e:
         logger.debug("is_admin_user(%s): failed checking configured admin users: %s", user, e)
     
-    # Check if user has Proxmox realm suffix (authenticated via Proxmox)
+    # Any Proxmox-authenticated user is admin by default.
     if '@' in user and (user.endswith('@pve') or user.endswith('@pam')):
-        # Check if user is in any configured admin group
-        from app.services.settings_service import get_all_admin_groups
-        admin_groups = get_all_admin_groups()
-        
-        if admin_groups:
-            # Check all configured admin groups
-            for admin_group in admin_groups:
-                if _user_in_group(user, admin_group):
-                    logger.debug("is_admin_user(%s) -> True (Proxmox user in %s group)", user, admin_group)
-                    return True
-            logger.debug("is_admin_user(%s) -> False (Proxmox user but not in any admin group)", user)
-            return False
-        else:
-            # No admin group configured - treat all Proxmox users as admins (legacy behavior)
-            logger.debug("is_admin_user(%s) -> True (Proxmox user, no admin group check)", user)
-            return True
+        logger.debug("is_admin_user(%s) -> True (Proxmox-authenticated user)", user)
+        return True
     
     # Check if local database user with adminer role
     try:
