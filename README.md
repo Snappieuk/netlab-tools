@@ -76,7 +76,13 @@ wget -qO- https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/insta
 
 ### 🔄 Update Existing Installation
 
-Update to the latest version:
+Fastest way (one command):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Snappieuk/proxmox-lab-gui/main/update.sh | sudo bash
+```
+
+Manual equivalent:
 
 ```bash
 cd /opt/proxmox-lab-gui
