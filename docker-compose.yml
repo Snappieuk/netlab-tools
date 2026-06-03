@@ -1,0 +1,26 @@
+services:
+  netlab-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netlab-tools
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+      DEBUG: "false"
+      # Persist SQLite database outside the container filesystem.
+      SQLALCHEMY_DATABASE_URI: sqlite:////data/lab_portal.db
+      # Set in deployment environment for production.
+      SECRET_KEY: change-me-session-key
+    volumes:
+      - netlab_data:/data
+    # Optional but useful for ARP probing features that require raw sockets.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+volumes:
+  netlab_data:

@@ -106,6 +106,36 @@ python3 run.py  # Runs on http://0.0.0.0:8080
 # Then configure clusters via web UI at http://localhost:8080/admin/settings
 ```
 
+### Docker Deployment
+
+Run as a container with persistent SQLite storage:
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Open the app at `http://your-server-ip:8080`.
+
+Useful commands:
+
+```bash
+# Follow logs
+docker compose logs -f netlab-tools
+
+# Pull code updates and redeploy
+git pull
+docker compose up -d --build
+
+# Stop service
+docker compose down
+```
+
+Notes:
+- Database persists in Docker volume `netlab_data`.
+- Container runs `migrate_db.py` on startup before launching the app.
+- ARP scan features may require `NET_RAW`/`NET_ADMIN` capabilities (already set in `docker-compose.yml`).
+
 ### Manual Production Deployment
 
 **Option 1: Start script (standalone)**
