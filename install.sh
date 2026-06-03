@@ -6,7 +6,7 @@
 # Or: bash install.sh
 #
 
-set -e  # Exit on error
+set -Eeuo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -14,6 +14,17 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Print actionable diagnostics on failure.
+on_error() {
+    local exit_code=$?
+    local line_no=${1:-unknown}
+    echo -e "${RED}[ERROR] Installation failed (line ${line_no}, exit ${exit_code})${NC}"
+    echo -e "${YELLOW}  Re-run with shell tracing for details:${NC}"
+    echo -e "${YELLOW}  bash -x install.sh${NC}"
+    exit "$exit_code"
+}
+trap 'on_error $LINENO' ERR
 
 # Configuration
 APP_NAME="proxmox-lab-gui"
@@ -23,53 +34,69 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 VENV_DIR="${APP_DIR}/venv"
 REPO_URL="https://github.com/Snappieuk/proxmox-lab-gui.git"
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║      Proxmox Lab GUI - Automated Installer           ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}========================================================${NC}"
+echo -e "${BLUE}      Proxmox Lab GUI - Automated Installer${NC}"
+echo -e "${BLUE}========================================================${NC}"
 echo ""
+
+# This installer targets Linux servers with systemd.
+if [[ "$(uname -s)" != "Linux" ]]; then
+    echo -e "${RED}[ERROR] This installer supports Linux only${NC}"
+    echo -e "${YELLOW}  Detected: $(uname -s)${NC}"
+    echo -e "${YELLOW}  For Windows dev setup, use:${NC}"
+    echo -e "${YELLOW}  python -m venv venv && venv\\Scripts\\activate && pip install -r requirements.txt${NC}"
+    exit 1
+fi
+
+if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+    echo -e "${RED}[ERROR] systemd is required for this installer${NC}"
+    echo -e "${YELLOW}  This host does not appear to be running systemd.${NC}"
+    echo -e "${YELLOW}  Use manual deployment steps in README.md for non-systemd environments.${NC}"
+    exit 1
+fi
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
-   echo -e "${RED}✗ This script must be run as root${NC}"
+   echo -e "${RED}[ERROR] This script must be run as root${NC}"
    echo -e "${YELLOW}  Please run: sudo bash install.sh${NC}"
    exit 1
 fi
 
-echo -e "${GREEN}✓ Running as root${NC}"
+echo -e "${GREEN}[OK] Running as root${NC}"
 
 # Detect OS
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
     OS_VERSION=$VERSION_ID
-    echo -e "${GREEN}✓ Detected OS: ${OS} ${OS_VERSION}${NC}"
+    echo -e "${GREEN}[OK] Detected OS: ${OS} ${OS_VERSION}${NC}"
 else
-    echo -e "${RED}✗ Cannot detect OS${NC}"
+    echo -e "${RED}[ERROR] Cannot detect OS${NC}"
     exit 1
 fi
 
 # Check if already installed
 if [ -d "$APP_DIR" ]; then
-    echo -e "${YELLOW}⚠ Installation directory already exists: ${APP_DIR}${NC}"
+    echo -e "${YELLOW}[WARN] Installation directory already exists: ${APP_DIR}${NC}"
     read -p "Do you want to remove and reinstall? (y/N): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${BLUE}→ Stopping existing service...${NC}"
+        echo -e "${BLUE}-> Stopping existing service...${NC}"
         systemctl stop ${SERVICE_NAME} 2>/dev/null || true
         systemctl disable ${SERVICE_NAME} 2>/dev/null || true
-        echo -e "${BLUE}→ Removing existing installation...${NC}"
+        echo -e "${BLUE}-> Removing existing installation...${NC}"
         rm -rf "$APP_DIR"
         rm -f "$SERVICE_FILE"
         systemctl daemon-reload
     else
-        echo -e "${RED}✗ Installation cancelled${NC}"
+        echo -e "${RED}[ERROR] Installation cancelled${NC}"
         exit 1
     fi
 fi
 
 # Install system dependencies
 echo ""
-echo -e "${BLUE}→ Installing system dependencies...${NC}"
+echo -e "${BLUE}-> Installing system dependencies...${NC}"
 
 if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
     apt-get update -qq
@@ -83,10 +110,9 @@ if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
         openssl \
         curl \
         wget \
-        openssh-client \
-        > /dev/null 2>&1
-    echo -e "${GREEN}✓ System dependencies installed${NC}"
-    
+        openssh-client
+    echo -e "${GREEN}[OK] System dependencies installed${NC}"
+
 elif [[ "$OS" == "centos" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "fedora" ]]; then
     if [[ "$OS" == "fedora" ]]; then
         dnf install -y -q \
@@ -98,8 +124,7 @@ elif [[ "$OS" == "centos" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "fedora" ]]
             openssl \
             curl \
             wget \
-            openssh-clients \
-            > /dev/null 2>&1
+            openssh-clients
     else
         yum install -y -q \
             python3 \
@@ -110,50 +135,46 @@ elif [[ "$OS" == "centos" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "fedora" ]]
             openssl \
             curl \
             wget \
-            openssh-clients \
-            > /dev/null 2>&1
+            openssh-clients
     fi
-    echo -e "${GREEN}✓ System dependencies installed${NC}"
+    echo -e "${GREEN}[OK] System dependencies installed${NC}"
 else
-    echo -e "${YELLOW}⚠ Unknown OS, attempting to continue...${NC}"
+    echo -e "${YELLOW}[WARN] Unknown OS, attempting to continue...${NC}"
 fi
 
 # Create application directory
-echo -e "${BLUE}→ Creating application directory...${NC}"
+echo -e "${BLUE}-> Creating application directory...${NC}"
 mkdir -p "$APP_DIR"
 cd "$APP_DIR"
-echo -e "${GREEN}✓ Application directory created: ${APP_DIR}${NC}"
+echo -e "${GREEN}[OK] Application directory created: ${APP_DIR}${NC}"
 
 # Clone repository
-echo -e "${BLUE}→ Cloning repository...${NC}"
+echo -e "${BLUE}-> Cloning repository...${NC}"
 git clone --depth 1 "$REPO_URL" .
-echo -e "${GREEN}✓ Repository cloned${NC}"
+echo -e "${GREEN}[OK] Repository cloned${NC}"
 
 # Create Python virtual environment
-echo -e "${BLUE}→ Creating Python virtual environment...${NC}"
+echo -e "${BLUE}-> Creating Python virtual environment...${NC}"
 python3 -m venv "$VENV_DIR"
-echo -e "${GREEN}✓ Virtual environment created${NC}"
+echo -e "${GREEN}[OK] Virtual environment created${NC}"
 
 # Activate virtual environment and install dependencies
-echo -e "${BLUE}→ Installing Python dependencies (this may take a minute)...${NC}"
+echo -e "${BLUE}-> Installing Python dependencies (this may take a minute)...${NC}"
 source "${VENV_DIR}/bin/activate"
-pip install --upgrade pip > /dev/null 2>&1
-pip install -r requirements.txt > /dev/null 2>&1
-echo -e "${GREEN}✓ Python dependencies installed${NC}"
+pip install --upgrade pip
+pip install -r requirements.txt
+echo -e "${GREEN}[OK] Python dependencies installed${NC}"
 
 # Create .env file if it doesn't exist
 if [ ! -f "${APP_DIR}/.env" ]; then
-    echo -e "${BLUE}→ Creating .env configuration file...${NC}"
-    # Generate random secret key
+    echo -e "${BLUE}-> Creating .env configuration file...${NC}"
     SECRET_KEY=$(openssl rand -hex 32)
-    
+
     if [ -f "${APP_DIR}/.env.example" ]; then
         cp "${APP_DIR}/.env.example" "${APP_DIR}/.env"
-        # Replace placeholder with actual random key
         sed -i "s/change-me-to-random-string-in-production/${SECRET_KEY}/" "${APP_DIR}/.env"
-        echo -e "${GREEN}✓ .env file created with random secret key${NC}"
+        echo -e "${GREEN}[OK] .env file created with random secret key${NC}"
     else
-        # Create minimal .env
         cat > "${APP_DIR}/.env" <<EOF
 # Flask Configuration
 SECRET_KEY=${SECRET_KEY}
@@ -162,18 +183,18 @@ FLASK_ENV=production
 # All cluster configurations are managed via the database
 # Use the web UI at /setup or /admin/settings to configure clusters
 EOF
-        echo -e "${GREEN}✓ .env file created${NC}"
+        echo -e "${GREEN}[OK] .env file created${NC}"
     fi
 else
-    echo -e "${GREEN}✓ .env file already exists${NC}"
+    echo -e "${GREEN}[OK] .env file already exists${NC}"
 fi
 
 # Initialize database and create tables
-echo -e "${BLUE}→ Initializing database...${NC}"
+echo -e "${BLUE}-> Initializing database...${NC}"
 python3 migrate_db.py
 
 # Create database tables by importing Flask app
-echo -e "${BLUE}→ Creating database tables...${NC}"
+echo -e "${BLUE}-> Creating database tables...${NC}"
 python3 <<PYEOF
 import sys
 sys.path.insert(0, '${APP_DIR}')
@@ -181,25 +202,24 @@ sys.path.insert(0, '${APP_DIR}')
 try:
     from app import create_app
     from app.models import db
-    
+
     app = create_app()
     with app.app_context():
         db.create_all()
-        print("   ✓ Database tables created successfully")
+        print("   [OK] Database tables created successfully")
 except Exception as e:
-    print(f"   ⚠️ Warning: Could not create tables: {e}")
-    print(f"   ℹ️  Tables will be created on first app startup")
+    print(f"   [WARN] Could not create tables: {e}")
+    print("   [INFO] Tables will be created on first app startup")
 PYEOF
 
-echo -e "${GREEN}✓ Database initialized${NC}"
+echo -e "${GREEN}[OK] Database initialized${NC}"
 
-# Initial cluster setup is done in web UI after service starts
 echo ""
-echo -e "${BLUE}→ Initial cluster configuration will be done in web UI (/setup) after install${NC}"
+echo -e "${BLUE}-> Initial cluster configuration will be done in web UI (/setup) after install${NC}"
 echo ""
 
 # Create systemd service
-echo -e "${BLUE}→ Creating systemd service...${NC}"
+echo -e "${BLUE}-> Creating systemd service...${NC}"
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Proxmox Lab GUI - Web Portal for VM Management
@@ -225,29 +245,28 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-echo -e "${GREEN}✓ Systemd service created${NC}"
+echo -e "${GREEN}[OK] Systemd service created${NC}"
 
 # Set proper permissions
-echo -e "${BLUE}→ Setting permissions...${NC}"
+echo -e "${BLUE}-> Setting permissions...${NC}"
 chown -R root:root "$APP_DIR"
 chmod +x "${APP_DIR}/run.py"
 chmod 600 "${APP_DIR}/.env"
-echo -e "${GREEN}✓ Permissions set${NC}"
+echo -e "${GREEN}[OK] Permissions set${NC}"
 
 # Reload systemd and enable service
-echo -e "${BLUE}→ Enabling and starting service...${NC}"
+echo -e "${BLUE}-> Enabling and starting service...${NC}"
 systemctl daemon-reload
 systemctl enable ${SERVICE_NAME}
 systemctl start ${SERVICE_NAME}
 
-# Wait a moment for service to start
 sleep 2
 
 # Check service status
 if systemctl is-active --quiet ${SERVICE_NAME}; then
-    echo -e "${GREEN}✓ Service started successfully${NC}"
+    echo -e "${GREEN}[OK] Service started successfully${NC}"
 else
-    echo -e "${RED}✗ Service failed to start${NC}"
+    echo -e "${RED}[ERROR] Service failed to start${NC}"
     echo -e "${YELLOW}  Check logs with: journalctl -u ${SERVICE_NAME} -f${NC}"
     exit 1
 fi
@@ -255,11 +274,10 @@ fi
 # Get IP address
 IP_ADDR=$(hostname -I | awk '{print $1}')
 
-# Installation complete
 echo ""
-echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║           Installation Complete! 🎉                   ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}========================================================${NC}"
+echo -e "${GREEN}           Installation Complete${NC}"
+echo -e "${GREEN}========================================================${NC}"
 echo ""
 echo -e "${BLUE}Access the web interface at:${NC}"
 echo -e "  ${GREEN}http://${IP_ADDR}:8080${NC}"
