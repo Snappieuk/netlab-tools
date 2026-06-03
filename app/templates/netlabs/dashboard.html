@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Netlabs Dashboard</h1>
+
+<div class="card" style="margin-bottom: 1rem;">
+    <h3>Rooms</h3>
+    {% if rooms %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Room</th>
+                <th>Total</th>
+                <th>Online</th>
+                <th>Stale</th>
+                <th>Offline</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for room in rooms %}
+            <tr>
+                <td><a href="{{ url_for('netlabs.room_detail', room=room.room) }}">{{ room.room }}</a></td>
+                <td>{{ room.machine_count }}</td>
+                <td>{{ room.online }}</td>
+                <td>{{ room.stale }}</td>
+                <td>{{ room.offline }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No machines have checked in yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>Machines</h3>
+    {% if machines %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>Room</th>
+                <th>IP</th>
+                <th>Status</th>
+                <th>Last seen</th>
+                <th>RDP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for machine in machines %}
+            <tr>
+                <td>{{ machine.display_name or machine.hostname }}</td>
+                <td>{{ machine.room }}</td>
+                <td>{{ machine.ip_address or "-" }}</td>
+                <td>{{ machine.status }}</td>
+                <td>{{ machine.last_seen or "-" }}</td>
+                <td><a href="{{ url_for('netlabs_api.netlabs_rdp', hostname=machine.hostname) }}">Download</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No machine data available.</p>
+    {% endif %}
+</div>
+{% endblock %}

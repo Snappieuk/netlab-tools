@@ -1,0 +1,3963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ class_.name }} - Lab VM Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='tabler-icons/tabler-icons.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 0;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: #333;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-close:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        .btn-secondary {
+            padding: 10px 20px;
+            background-color: #f0f0f0;
+            color: #333;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .btn-primary {
+            padding: 10px 20px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary:hover {
+            background-color: #1976D2;
+        }
+        
+        .spinner-border {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            vertical-align: text-bottom;
+            border: 0.25em solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spinner-border 0.75s linear infinite;
+        }
+        
+        @keyframes spinner-border {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Power Status Badges */
+        .power-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .power-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        
+        .power-badge-running {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .power-badge-stopped {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .power-badge-paused {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-left">
+        <span class="logo-square"></span>
+        <span class="topbar-title">{{ class_.name }}</span>
+    </div>
+    <div class="topbar-right">
+        {% if session.get("user") %}
+            <span class="topbar-user">
+                {{ session.get("user") }}
+                {% if local_user_role %}
+                    <span class="role-badge role-{{ local_user_role }}">{{ local_user_role }}</span>
+                {% endif %}
+            </span>
+            <a href="{{ url_for('auth.logout') }}" class="topbar-link">Sign out</a>
+        {% endif %}
+    </div>
+</header>
+
+<div class="app-shell">
+    <nav class="sidebar">
+        <div class="sidebar-section-title">{{ class_.name }}</div>
+        
+        <!-- Template Section (Teacher/Admin Only) -->
+        {% if can_manage %}
+            <a class="sidebar-link sidebar-link-active" href="#template" onclick="showSection('template'); return false;">
+                <i class="ti ti-package"></i> Template
+            </a>
+            <a class="sidebar-link" href="#vms" onclick="showSection('vms'); return false;">
+                <i class="ti ti-server-2"></i> Virtual Machines
+            </a>
+            <a class="sidebar-link" href="#students" onclick="showSection('students'); return false;">
+                <i class="ti ti-users"></i> Students
+            </a>
+            <a class="sidebar-link" href="#owners" onclick="showSection('owners'); return false;">
+                <i class="ti ti-user-shield"></i> Co-Owners
+            </a>
+            <a class="sidebar-link" href="#settings" onclick="showSection('settings'); return false;">
+                <i class="ti ti-settings"></i> Settings
+            </a>
+        {% else %}
+            <!-- Student View -->
+            <a class="sidebar-link sidebar-link-active" href="#my-vm" onclick="showSection('my-vm'); return false;">
+                <i class="ti ti-device-desktop"></i> My Machine
+            </a>
+        {% endif %}
+        
+        <div class="sidebar-section-title" style="margin-top: 1rem;">Navigation</div>
+        <a class="sidebar-link" href="{{ url_for('portal.portal') }}">
+            <i class="ti ti-home"></i> Portal Home
+        </a>
+        <a class="sidebar-link" href="{{ url_for('classes.classes_list') }}">
+            <i class="ti ti-arrow-left"></i> Back to Classes
+        </a>
+        
+        {% if can_manage %}
+        <div class="sidebar-section-title" style="margin-top: 1rem;">Danger Zone</div>
+        {% if is_owner or (user_role == 'adminer') %}
+        <a class="sidebar-link" href="#" onclick="deleteClass(); return false;" style="color: #dc3545;">
+            <i class="ti ti-trash"></i> Delete Class
+        </a>
+        {% endif %}
+        {% if is_co_owner %}
+        <div style="padding: 0.75rem 1rem; font-size: 0.85rem; color: #666; background: #f9f9f9; border-radius: 4px; margin: 0.5rem 0;">
+            <i class="ti ti-info-circle"></i> Co-owners cannot delete classes
+        </div>
+        {% endif %}
+        {% endif %}
+    </nav>
+
+    <main class="main">
+        <div id="alert-container"></div>
+        
+        <!-- Template Section (Teacher/Admin) -->
+        {% if can_manage %}
+        <div id="template-section" class="content-section">
+            <div class="page-header">
+                <div>
+                    <h1><i class="ti ti-package"></i> Template Management</h1>
+                    <p class="page-subtitle">Manage the base template for this class</p>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                <!-- Dynamic status area -->
+                <div id="template-status" style="padding: 2rem; text-align: center;">
+                    <div class="spinner" id="template-spinner" style="margin: 0 auto 1rem;"></div>
+                    <p id="template-status-text">Initializing template...</p>
+                    <p id="template-retry-text" style="display:none; font-size:0.8rem; color:#605e5c;">Retrying <span id="template-retry-count">1</span> / <span id="template-retry-max">10</span>...</p>
+                </div>
+                
+                <div id="template-info" style="display: none;">
+                    <!-- Header Section: Name + Controls -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: #f9f9f9; border-radius: 8px; margin-bottom: 2rem;">
+                        <!-- Left: VM Info -->
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.25rem;">
+                                <h3 style="margin: 0; font-size: 1.5rem; font-weight: 600;" id="template-name">-</h3>
+                                <span id="template-power-status" class="power-badge power-badge-stopped">Stopped</span>
+                            </div>
+                            <div style="color: #605e5c; font-size: 0.9rem;">
+                                <span><strong>VMID:</strong> <span id="template-vmid">-</span></span>
+                                <span style="margin: 0 1rem;">•</span>
+                                <span><strong>Node:</strong> <span id="template-node">-</span></span>
+                                <span style="margin: 0 1rem;">•</span>
+                                <span><strong>IP:</strong> <span id="template-ip" class="mono">(pending)</span></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Right: Controls -->
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <!-- Power Buttons -->
+                            <button id="btn-start-template" onclick="handleStartTemplate()" class="btn-header" title="Start VM" style="display: none;">
+                                <i class="ti ti-player-play-filled"></i>
+                            </button>
+                            <button id="btn-stop-template" onclick="handleStopTemplate()" class="btn-header" title="Stop VM" style="display: none;">
+                                <i class="ti ti-player-stop-filled"></i>
+                            </button>
+                            
+                            <!-- SSH Button -->
+                            <button id="btn-ssh-template" onclick="sshToTemplate()" class="btn-header" title="SSH Terminal">
+                                <i class="ti ti-terminal-2"></i>
+                            </button>
+                            
+                            <!-- Console Button -->
+                            <button id="btn-console-template" onclick="consoleToTemplate()" class="btn-header" title="Web Console">
+                                <i class="ti ti-browser"></i>
+                            </button>
+                            
+                            <!-- RDP Button -->
+                            <button id="btn-rdp-template" onclick="rdpToTemplate()" class="btn-header" title="Download RDP">
+                                <i class="ti ti-file-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Actions Row -->
+                    {% if class_.deployment_method == 'linked_clone' %}
+                    <!-- For linked clones: only show Reimage button (2 col layout) -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                        <button onclick="reimageTemplate()" class="btn-action-large btn-gray">
+                            <i class="ti ti-refresh"></i>
+                            <span>Reimage</span>
+                            <small>Reset to baseline</small>
+                        </button>
+                        <!-- Placeholder for grid alignment -->
+                        <div></div>
+                    </div>
+                    {% else %}
+                    <!-- For config clones: show all 3 action buttons (3 col layout) -->
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                        <button onclick="reimageTemplate()" class="btn-action-large btn-gray">
+                            <i class="ti ti-refresh"></i>
+                            <span>Reimage</span>
+                            <small>Reset to baseline</small>
+                        </button>
+                        <button onclick="saveTemplate()" class="btn-action-large btn-blue">
+                            <i class="ti ti-device-floppy"></i>
+                            <span>Save Template</span>
+                            <small>Save current state</small>
+                        </button>
+                        <button onclick="pushTemplate()" class="btn-action-large btn-orange">
+                            <i class="ti ti-refresh"></i>
+                            <span>Push to VMs</span>
+                            <small>Update all students</small>
+                        </button>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Info Box -->
+                    {% if class_.deployment_method == 'linked_clone' %}
+                    <div style="padding: 1rem; background: #e8f4fd; border-radius: 6px; border-left: 4px solid #0078d4;">
+                        <div style="display: flex; align-items: start; gap: 0.75rem;">
+                            <i class="ti ti-info-circle" style="font-size: 1.25rem; color: #0078d4; margin-top: 0.1rem;"></i>
+                            <div style="font-size: 0.9rem; color: #323130;">
+                                <strong style="display: block; margin-bottom: 0.5rem;">Linked Clone Workflow</strong>
+                                <div style="line-height: 1.6;">
+                                    <strong>Reimage:</strong> Reset template to original snapshot baseline.<br>
+                                    <em style="color: #666;">Note: Template modifications are persisted automatically. Linked clones cannot be individually customized after creation.</em>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div style="padding: 1rem; background: #e8f4fd; border-radius: 6px; border-left: 4px solid #0078d4;">
+                        <div style="display: flex; align-items: start; gap: 0.75rem;">
+                            <i class="ti ti-info-circle" style="font-size: 1.25rem; color: #0078d4; margin-top: 0.1rem;"></i>
+                            <div style="font-size: 0.9rem; color: #323130;">
+                                <strong style="display: block; margin-bottom: 0.5rem;">Template Workflow</strong>
+                                <div style="line-height: 1.6;">
+                                    <strong>Reimage:</strong> Revert template to original baseline •
+                                    <strong>Save:</strong> Save current state as new baseline •
+                                    <strong>Push:</strong> Recreate all student VMs from current template
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- VMs Section (Teacher/Admin) -->
+        <div id="vms-section" class="content-section" style="display: none;">
+            <div class="page-header">
+                <div>
+                    <h1><i class="ti ti-server-2"></i> Virtual Machines</h1>
+                    <p class="page-subtitle">Manage student VMs for this class</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button onclick="bulkStartVMs()" class="btn-secondary" id="bulk-start-btn" style="display: none;">
+                        <i class="ti ti-power"></i> Start Selected
+                    </button>
+                    <button onclick="bulkStopVMs()" class="btn-secondary" id="bulk-stop-btn" style="display: none;">
+                        <i class="ti ti-power"></i> Stop Selected
+                    </button>
+                    <button onclick="showLoadBalanceModal()" class="btn-secondary" title="Load balance VMs across nodes">
+                        <i class="ti ti-load-balancer"></i> Load Balance
+                    </button>
+                    <button onclick="showAddVMsModal()" class="btn-secondary">
+                        <i class="ti ti-circle-plus"></i> Add VMs
+                    </button>
+                    <button onclick="refreshVMs()" class="btn-primary">
+                        <i class="ti ti-refresh"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Deployment Progress Bar (shown during VM creation) -->
+            <div id="deployment-progress" style="display: none; margin-bottom: 1.5rem;">
+                <div class="content-card" style="background: #f8f9fa; border-left: 4px solid #0078d4;">
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                        <div class="spinner-border" style="width: 24px; height: 24px; border-width: 3px;"></div>
+                        <div>
+                            <h3 style="margin: 0; font-size: 1rem; color: #333;">Creating Virtual Machines</h3>
+                            <p style="margin: 0; color: #666; font-size: 0.9rem;" id="deployment-status">Initializing...</p>
+                        </div>
+                    </div>
+                    <div style="background: #e9ecef; height: 24px; border-radius: 12px; overflow: hidden; position: relative;">
+                        <div id="deployment-progress-bar" style="background: linear-gradient(90deg, #0078d4, #00a8e8); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.85rem;">
+                            <span id="deployment-percentage">0%</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #666;" id="deployment-details"></div>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                <table class="vm-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="select-all-vms" onchange="toggleAllVMs(this)">
+                            </th>
+                            <th>Name</th>
+                            <th>VMID</th>
+                            <th>Node</th>
+                            <th>Status</th>
+                            <th>IP Address</th>
+                            <th>Assigned Student</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vms-tbody">
+                        {% for vm in vm_assignments %}
+                        {% if not vm.is_template_vm and not vm.is_teacher_vm and not ('-teacher' in (vm.vm_name or '').lower()) %}
+                        <tr data-vmid="{{ vm.proxmox_vmid }}" data-node="{{ vm.node }}">
+                            <td>
+                                <input type="checkbox" class="vm-checkbox" value="{{ vm.proxmox_vmid }}" 
+                                       data-node="{{ vm.node }}" onchange="updateBulkButtons()">
+                            </td>
+                            <td><strong id="name-{{ vm.proxmox_vmid }}">{{ vm.vm_name or 'N/A' }}</strong></td>
+                            <td>{{ vm.proxmox_vmid }}</td>
+                            <td>{{ vm.node or 'N/A' }}</td>
+                            <td>
+                                <span class="badge {% if vm.status == 'running' %}badge-success{% elif vm.status == 'stopped' %}badge-danger{% else %}badge-secondary{% endif %}" id="status-{{ vm.proxmox_vmid }}">
+                                    {% if vm.status == 'running' %}● Running{% elif vm.status == 'stopped' %}● Stopped{% else %}● {{ vm.status or 'Unknown' }}{% endif %}
+                                </span>
+                            </td>
+                            <td class="vm-ip" id="ip-{{ vm.proxmox_vmid }}">{{ vm.ip or 'N/A' }}</td>
+                            <td>{{ vm.assigned_user_name or '<span style="color: #999;">Unassigned</span>' | safe }}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn-icon btn-icon-success btn-start btn-power" 
+                                            onclick="startVm({{ vm.proxmox_vmid }}, '{{ vm.node }}')"
+                                            title="Start VM">
+                                        <i class="ti ti-player-play-filled"></i>
+                                    </button>
+                                    <button class="btn-icon btn-icon-danger btn-stop btn-power" 
+                                            onclick="stopVm({{ vm.proxmox_vmid }}, '{{ vm.node }}')"
+                                            title="Stop VM">
+                                        <i class="ti ti-player-stop-filled"></i>
+                                    </button>
+                                    <button class="btn-icon btn-icon-dark" 
+                                            onclick="revertVm({{ vm.proxmox_vmid }}, '{{ vm.node }}')"
+                                            title="Revert to Baseline">
+                                        <i class="ti ti-refresh"></i>
+                                    </button>
+                                    <button class="btn-icon btn-icon-dark" 
+                                            onclick="sshVm({{ vm.proxmox_vmid }}, '{{ vm.ip }}', '{{ vm.vm_name }}')"
+                                            title="Open SSH Terminal">
+                                        <i class="ti ti-terminal-2"></i>
+                                    </button>
+                                    <button class="btn-icon btn-icon-info"
+                                            onclick="consoleVm({{ vm.proxmox_vmid }})"
+                                            title="Web Console">
+                                        <i class="ti ti-browser"></i>
+                                    </button>
+                                    <a class="btn-icon btn-icon-primary" 
+                                       href="/rdp/{{ vm.proxmox_vmid }}.rdp"
+                                       title="Download RDP File">
+                                        <i class="ti ti-brand-windows"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Students Section (Teacher/Admin) -->
+        <div id="students-section" class="content-section" style="display: none;">
+            <div class="page-header">
+                <div>
+                    <h1><i class="ti ti-users"></i> Students</h1>
+                    <p class="page-subtitle">Manage student enrollment via invite links</p>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                <!-- Permanent Invite Link -->
+                <div id="invite-status" style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Class Invite Link</h3>
+                    <div id="invite-display">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Enrolled Students List -->
+                <div>
+                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Enrolled Students</h3>
+                    <div id="students-list">
+                        <p style="color: #666;">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Co-Owners Section (Teacher/Admin) -->
+        {% if can_manage %}
+        <div id="owners-section" class="content-section" style="display: none;">
+            <div class="page-header">
+                <div>
+                    <h1><i class="ti ti-user-shield"></i> Class Co-Owners</h1>
+                    <p class="page-subtitle">Manage who can co-teach and manage this class</p>
+                </div>
+                <div>
+                    <button onclick="showAddCoOwnerModal()" class="btn-primary">
+                        <i class="ti ti-user-plus"></i> Add Co-Owner
+                    </button>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                <h3 style="margin: 0 0 1rem 0;">Primary Teacher</h3>
+                <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f5f5f5; border-radius: 6px; margin-bottom: 2rem;">
+                    <i class="ti ti-star-filled" style="font-size: 1.5rem; color: #ffc107;"></i>
+                    <div>
+                        <div style="font-weight: 600; font-size: 1.1rem;" id="primary-teacher-name">{{ class_.teacher.username if class_.teacher else 'Unknown' }}</div>
+                        <div style="color: #666; font-size: 0.9rem;">Creator and primary owner</div>
+                    </div>
+                </div>
+                
+                <h3 style="margin: 2rem 0 1rem 0;">Co-Owners</h3>
+                <div id="co-owners-list">
+                    <p style="text-align: center; color: #666; padding: 2rem;">
+                        <i class="ti ti-hourglass"></i> Loading...
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Settings Section (Teacher/Admin) -->
+        <div id="settings-section" class="content-section" style="display: none;">
+            <div class="page-header">
+                <div>
+                    <h1><i class="ti ti-settings"></i> Class Settings</h1>
+                    <p class="page-subtitle">Configure automation and behavior for this class</p>
+                </div>
+            </div>
+            
+            <!-- Settings Form Container -->
+            <div style="max-width: 1200px; margin: 0 auto; padding-bottom: 100px;">
+                
+                <!-- Auto-Shutdown Configuration Section -->
+                <div class="settings-card">
+                    <div class="settings-card-header" onclick="toggleSection('auto-shutdown')">
+                        <div>
+                            <h2 style="margin: 0; font-size: 17px; font-weight: 600; color: #1e293b;">Auto-Shutdown Configuration</h2>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #64748b;">Automatically shut down idle VMs to save resources</p>
+                        </div>
+                        <i id="auto-shutdown-chevron" class="ti ti-chevron-down" style="font-size: 20px; color: #64748b; transition: transform 0.2s;"></i>
+                    </div>
+                    
+                    <div id="auto-shutdown-content" class="settings-card-content">
+                        <!-- Enable Toggle -->
+                        <div style="margin-bottom: 32px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                <input type="checkbox" id="auto-shutdown-enabled" class="settings-toggle">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 15px; color: #1e293b;">Enable Auto-Shutdown</div>
+                                    <div style="color: #64748b; font-size: 14px; margin-top: 2px;">
+                                        Automatically turn off idle VMs in this class
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <!-- Settings Grid -->
+                        <div class="settings-grid">
+                            <!-- CPU Threshold -->
+                            <div class="setting-field">
+                                <label class="setting-label">CPU Threshold</label>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <input 
+                                        type="range" 
+                                        id="cpu-threshold" 
+                                        min="5" 
+                                        max="50" 
+                                        value="20" 
+                                        class="settings-slider"
+                                        oninput="document.getElementById('cpu-threshold-value').textContent = this.value"
+                                    >
+                                    <div style="display: flex; align-items: center; gap: 4px; min-width: 60px;">
+                                        <span id="cpu-threshold-value" style="font-weight: 600; font-size: 15px; color: #1e293b;">20</span>
+                                        <span style="color: #64748b; font-size: 14px;">%</span>
+                                    </div>
+                                </div>
+                                <p class="setting-description">
+                                    VMs will be shut down if CPU usage stays below this percentage
+                                </p>
+                            </div>
+                            
+                            <!-- Idle Duration -->
+                            <div class="setting-field">
+                                <label class="setting-label">Idle Duration</label>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <input 
+                                        type="number" 
+                                        id="idle-minutes" 
+                                        min="5" 
+                                        max="240" 
+                                        value="30" 
+                                        class="settings-input"
+                                        style="width: 100px;"
+                                    >
+                                    <span style="color: #64748b; font-size: 14px;">minutes</span>
+                                </div>
+                                <p class="setting-description">
+                                    How long VMs must stay idle before shutdown (5-240 minutes)
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- Inline Info Callout -->
+                        <div class="info-callout">
+                            <i class="ti ti-info-circle" style="font-size: 18px; color: #0284c7; flex-shrink: 0;"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; font-size: 14px; color: #0c4a6e; margin-bottom: 8px;">How Auto-Shutdown Works</div>
+                                <div style="font-size: 14px; color: #075985; line-height: 1.5;">
+                                    VMs are checked every 5 minutes for activity. If CPU usage stays below the threshold for the specified duration, the VM is automatically shut down. Students can restart their VMs at any time. Teacher VMs are excluded from auto-shutdown.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Available Hours & Session Limits Section -->
+                <div class="settings-card">
+                    <div class="settings-card-header" onclick="toggleSection('time-limits')">
+                        <div>
+                            <h2 style="margin: 0; font-size: 17px; font-weight: 600; color: #1e293b;">Available Hours & Session Limits</h2>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #64748b;">Control when VMs can be used and for how long</p>
+                        </div>
+                        <i id="time-limits-chevron" class="ti ti-chevron-down" style="font-size: 20px; color: #64748b; transition: transform 0.2s;"></i>
+                    </div>
+                    
+                    <div id="time-limits-content" class="settings-card-content">
+                        <!-- Enable Toggle -->
+                        <div style="margin-bottom: 32px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                <input type="checkbox" id="restrict-hours" class="settings-toggle" onchange="toggleTimeRestrictions()">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 15px; color: #1e293b;">Restrict Available Hours</div>
+                                    <div style="color: #64748b; font-size: 14px; margin-top: 2px;">
+                                        Limit when students can start and use VMs
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <!-- Settings Grid -->
+                        <div class="settings-grid">
+                            <!-- Time Window -->
+                            <div class="setting-field" id="time-window-field">
+                                <label class="setting-label">Allowed Time Window</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div>
+                                        <label style="display: block; color: #64748b; font-size: 13px; margin-bottom: 6px;">Start Time</label>
+                                        <input type="time" id="hours-start" value="00:00" class="settings-input">
+                                    </div>
+                                    <div>
+                                        <label style="display: block; color: #64748b; font-size: 13px; margin-bottom: 6px;">End Time</label>
+                                        <input type="time" id="hours-end" value="23:00" class="settings-input">
+                                    </div>
+                                </div>
+                                <p class="setting-description">
+                                    Students can only start VMs during this window (server timezone)
+                                </p>
+                            </div>
+                            
+                            <!-- Max Usage Time -->
+                            <div class="setting-field">
+                                <label class="setting-label">Maximum Usage Time</label>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <input 
+                                        type="number" 
+                                        id="max-usage-hours" 
+                                        min="0" 
+                                        max="500" 
+                                        value="0" 
+                                        placeholder="0"
+                                        class="settings-input"
+                                        style="width: 100px;"
+                                    >
+                                    <span style="color: #64748b; font-size: 14px;">hours (0 = unlimited)</span>
+                                </div>
+                                <p class="setting-description">
+                                    Total hours students can use their VM in this class (cumulative)
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- Inline Warning Callout -->
+                        <div class="warning-callout">
+                            <i class="ti ti-alert-triangle" style="font-size: 18px; color: #ea580c; flex-shrink: 0;"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; font-size: 14px; color: #7c2d12; margin-bottom: 8px;">How Time Restrictions Work</div>
+                                <div style="font-size: 14px; color: #9a3412; line-height: 1.5;">
+                                    VMs can only be started during the allowed time window. Running VMs outside these hours will be automatically shut down. Maximum usage time tracks total cumulative hours across all sessions. Teachers can reset usage time for individual students or the entire class.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- VM Hardware Specifications Section (Config Clone Only) -->
+                {% if class_.deployment_method != 'linked_clone' %}
+                <div class="settings-card">
+                    <div class="settings-card-header" onclick="toggleSection('vm-hardware')">
+                        <div>
+                            <h2 style="margin: 0; font-size: 17px; font-weight: 600; color: #1e293b;">VM Hardware Specifications</h2>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #64748b;">Configure CPU and RAM for student VMs</p>
+                        </div>
+                        <i id="vm-hardware-chevron" class="ti ti-chevron-down" style="font-size: 20px; color: #64748b; transition: transform 0.2s;"></i>
+                    </div>
+                    
+                    <div id="vm-hardware-content" class="settings-card-content">
+                        <!-- Settings Grid -->
+                        <div class="settings-grid">
+                            <!-- CPU Cores -->
+                            <div class="setting-field">
+                                <label class="setting-label">CPU Cores</label>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <input 
+                                        type="number" 
+                                        id="vm-cpu-cores" 
+                                        min="1" 
+                                        max="32" 
+                                        value="2" 
+                                        class="settings-input"
+                                        style="width: 100px;"
+                                    >
+                                    <span style="color: #64748b; font-size: 14px;">cores (1-32)</span>
+                                </div>
+                                <p class="setting-description">
+                                    Number of CPU cores allocated to each student VM
+                                </p>
+                            </div>
+                            
+                            <!-- Memory -->
+                            <div class="setting-field">
+                                <label class="setting-label">Memory (RAM)</label>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <input 
+                                        type="number" 
+                                        id="vm-memory-mb" 
+                                        min="512" 
+                                        max="131072" 
+                                        step="512"
+                                        value="4096" 
+                                        class="settings-input"
+                                        style="width: 120px;"
+                                    >
+                                    <span style="color: #64748b; font-size: 14px;">MB (0.5GB - 128GB)</span>
+                                </div>
+                                <p class="setting-description">
+                                    Memory allocated to each student VM in megabytes
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- Inline Warning Callout -->
+                        <div class="warning-callout" style="background: #fef3c7; border-color: #fde047;">
+                            <i class="ti ti-alert-triangle-filled" style="font-size: 18px; color: #d97706; flex-shrink: 0;"></i>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; font-size: 14px; color: #78350f; margin-bottom: 8px;">Important: VM Spec Changes</div>
+                                <div style="font-size: 14px; color: #92400e; line-height: 1.5;">
+                                    <strong>Changing VM specifications will recreate all student VMs.</strong> This process will:
+                                    <ul style="margin: 8px 0; padding-left: 20px;">
+                                        <li>Stop and delete all existing student VMs</li>
+                                        <li>Create new VMs with updated CPU and RAM from the class template</li>
+                                        <li>Preserve the teacher VM (not affected)</li>
+                                        <li>Run in the background (takes 1-2 minutes per VM)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <!-- Linked Clone Classes: Hardware specs inherited from template -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <div>
+                            <h2 style="margin: 0; font-size: 17px; font-weight: 600; color: #1e293b;">VM Hardware Specifications</h2>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #64748b;">Inherited from template</p>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-card-content" style="background: #f0f9ff; border-radius: 8px; padding: 16px;">
+                        <div style="color: #0c4a6e; font-size: 14px; line-height: 1.5;">
+                            <strong>Linked clone classes use template hardware specifications.</strong> Student VMs automatically inherit the CPU cores and memory configured in the template. To modify hardware specs, update the template configuration on the Proxmox server directly.
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Settings Status Message -->
+                <div id="settings-status" style="display: none; margin-top: 24px; padding: 16px; border-radius: 8px;"></div>
+            </div>
+            
+            <!-- Sticky Footer with Action Buttons -->
+            <div class="settings-footer">
+                <div style="max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
+                    <button type="button" class="btn-secondary" onclick="loadSettings()">
+                        <i class="ti ti-refresh"></i> Reset to Saved
+                    </button>
+                    <div style="display: flex; gap: 12px;">
+                        <button type="button" class="btn-primary" onclick="saveAllSettings()">
+                            <i class="ti ti-circle-check"></i> Save Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <style>
+                /* Settings Card Styles */
+                .settings-card {
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    margin-bottom: 16px;
+                    overflow: hidden;
+                }
+                
+                .settings-card-header {
+                    padding: 24px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    cursor: pointer;
+                    user-select: none;
+                    transition: background-color 0.2s;
+                }
+                
+                .settings-card-header:hover {
+                    background-color: #f8fafc;
+                }
+                
+                .settings-card-content {
+                    padding: 0 24px 24px 24px;
+                    display: block;
+                }
+                
+                .settings-card-content.collapsed {
+                    display: none;
+                }
+                
+                /* Settings Grid Layout */
+                .settings-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 24px;
+                    margin-bottom: 24px;
+                }
+                
+                @media (max-width: 768px) {
+                    .settings-grid {
+                        grid-template-columns: 1fr;
+                    }
+                }
+                
+                /* Setting Field Styles */
+                .setting-field {
+                    display: flex;
+                    flex-direction: column;
+                }
+                
+                .setting-label {
+                    display: block;
+                    font-weight: 600;
+                    font-size: 15px;
+                    color: #1e293b;
+                    margin-bottom: 8px;
+                }
+                
+                .setting-description {
+                    color: #64748b;
+                    font-size: 13px;
+                    margin: 8px 0 0 0;
+                    line-height: 1.4;
+                }
+                
+                /* Input Styles */
+                .settings-input {
+                    padding: 10px 12px;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    color: #1e293b;
+                    transition: border-color 0.2s, box-shadow 0.2s;
+                }
+                
+                .settings-input:focus {
+                    outline: none;
+                    border-color: #0ea5e9;
+                    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+                }
+                
+                .settings-toggle {
+                    width: 20px;
+                    height: 20px;
+                    cursor: pointer;
+                    accent-color: #0ea5e9;
+                }
+                
+                .settings-slider {
+                    flex: 1;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: #e2e8f0;
+                    outline: none;
+                    -webkit-appearance: none;
+                }
+                
+                .settings-slider::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #0ea5e9;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                }
+                
+                .settings-slider::-webkit-slider-thumb:hover {
+                    transform: scale(1.1);
+                }
+                
+                .settings-slider::-moz-range-thumb {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #0ea5e9;
+                    cursor: pointer;
+                    border: none;
+                    transition: transform 0.2s;
+                }
+                
+                .settings-slider::-moz-range-thumb:hover {
+                    transform: scale(1.1);
+                }
+                
+                /* Info Callout Styles */
+                .info-callout {
+                    display: flex;
+                    gap: 12px;
+                    padding: 16px;
+                    background: #f0f9ff;
+                    border: 1px solid #bae6fd;
+                    border-radius: 8px;
+                    margin-top: 8px;
+                }
+                
+                .warning-callout {
+                    display: flex;
+                    gap: 12px;
+                    padding: 16px;
+                    background: #fff7ed;
+                    border: 1px solid #fed7aa;
+                    border-radius: 8px;
+                    margin-top: 8px;
+                }
+                
+                /* Sticky Footer Styles */
+                .settings-footer {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    background: white;
+                    border-top: 1px solid #e2e8f0;
+                    padding: 16px 24px;
+                    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.05);
+                    z-index: 100;
+                }
+                
+                /* Disabled State for Time Window */
+                .setting-field.disabled {
+                    opacity: 0.5;
+                    pointer-events: none;
+                }
+            </style>
+            
+            <script>
+                // Toggle collapsible sections
+                function toggleSection(sectionId) {
+                    const content = document.getElementById(sectionId + '-content');
+                    const chevron = document.getElementById(sectionId + '-chevron');
+                    
+                    if (content.classList.contains('collapsed')) {
+                        content.classList.remove('collapsed');
+                        chevron.style.transform = 'rotate(0deg)';
+                    } else {
+                        content.classList.add('collapsed');
+                        chevron.style.transform = 'rotate(-90deg)';
+                    }
+                }
+                
+                // Toggle time restrictions enable/disable
+                function toggleTimeRestrictions() {
+                    const enabled = document.getElementById('restrict-hours').checked;
+                    const timeWindowField = document.getElementById('time-window-field');
+                    
+                    if (enabled) {
+                        timeWindowField.classList.remove('disabled');
+                    } else {
+                        timeWindowField.classList.add('disabled');
+                    }
+                }
+                
+                // Initialize on page load
+                document.addEventListener('DOMContentLoaded', function() {
+                    toggleTimeRestrictions();
+                });
+            </script>
+        </div>
+        {% endif %}
+        
+        <!-- My VM Section (Student) -->
+        {% if is_student %}
+        <div id="my-vm-section" class="content-section">
+            <div class="page-header">
+                <div>
+                    <h1><i class="ti ti-device-desktop"></i> My Virtual Machine</h1>
+                    <p class="page-subtitle">Your assigned VM for {{ class_.name }}</p>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                {% if vm_assignments and vm_assignments|length > 0 %}
+                {% set vm = vm_assignments[0] %}
+                
+                <!-- Session Progress (if restrictions enabled) -->
+                <div id="student-session-progress" style="display: none; margin-bottom: 2rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">Session Time</span>
+                        <span id="student-session-time" style="font-size: 0.9rem; color: #666;">--:-- / --:--</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden;">
+                        <div id="student-session-bar" style="height: 100%; background: linear-gradient(90deg, #107c10 0%, #ffc107 70%, #dc3545 100%); width: 0%; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div id="student-session-warning" style="display: none; margin-top: 0.5rem; padding: 0.5rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+                        <i class="ti ti-alert-triangle" style="color: #856404;"></i>
+                        <span id="student-session-warning-text" style="color: #856404; font-size: 0.85rem; margin-left: 0.5rem;"></span>
+                    </div>
+                    <div id="student-hours-info" style="margin-top: 0.75rem; padding: 0.75rem; background: #e6f4ff; border-radius: 4px; font-size: 0.85rem; color: #003d7a;"></div>
+                </div>
+                
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">VMID:</span>
+                        <span id="student-vm-vmid">{{ vm.proxmox_vmid }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">VM Name:</span>
+                        <span id="student-vm-name">{{ vm.vm_name or 'N/A' }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Status:</span>
+                        <span id="student-vm-status" class="status-badge status-{{ vm.status }}">{{ vm.status }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">IP Address:</span>
+                        <span id="student-vm-ip">{{ vm.ip_address or 'N/A' }}</span>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
+                    <button class="btn-primary" 
+                            id="student-start-btn"
+                            onclick="studentStartVM()"
+                            {% if vm.status == 'running' %}disabled{% endif %}>
+                        <i class="ti ti-player-play-filled"></i> Start
+                    </button>
+                    <button class="btn-secondary" 
+                            id="student-stop-btn"
+                            onclick="studentStopVM()"
+                            {% if vm.status == 'stopped' %}disabled{% endif %}>
+                        <i class="ti ti-player-stop-filled"></i> Stop
+                    </button>
+                    <button class="btn-primary" 
+                            id="student-console-btn"
+                            onclick="studentOpenConsole()">
+                        <i class="ti ti-browser"></i> Web Console
+                    </button>
+                    <button class="btn-primary" 
+                            id="student-rdp-btn"
+                            onclick="studentDownloadRDP()"
+                            {% if not vm.ip_address %}disabled{% endif %}>
+                        <i class="ti ti-download"></i> RDP
+                    </button>
+                    <button class="btn-secondary" 
+                            id="student-ssh-btn"
+                            onclick="studentOpenSSH()"
+                            {% if not vm.ip_address %}disabled{% endif %}>
+                        <i class="ti ti-terminal"></i> SSH
+                    </button>
+                </div>
+                {% else %}
+                <div style="padding: 2rem; text-align: center; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
+                    <i class="ti ti-hourglass" style="font-size: 2rem; color: #856404;"></i>
+                    <h3 style="margin: 1rem 0 0.5rem; color: #856404;">No VM Assigned Yet</h3>
+                    <p style="color: #856404; margin: 0;">You're enrolled in this class, but no VM has been assigned yet.</p>
+                    <p style="color: #856404; margin: 0.5rem 0 0;">Your teacher will assign a VM when available.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </main>
+</div>
+
+<style>
+.content-section {
+    animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.content-card {
+    background: white;
+    border: 1px solid #e1dfdd;
+    border-radius: 8px;
+    padding: 2rem;
+    margin-top: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.25rem;
+    padding: 1.25rem;
+    background: #f9f9f9;
+    border-radius: 6px;
+    border: 1px solid #e8e8e8;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.info-label {
+    font-weight: 600;
+    color: #605e5c;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.info-item > span:not(.info-label) {
+    font-size: 1rem;
+    color: #323130;
+    font-weight: 500;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.375rem 0.875rem;
+    border-radius: 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    width: fit-content;
+}
+
+.status-running {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-stopped {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-available {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.status-assigned {
+    background: #d4edda;
+    color: #155724;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 1rem;
+    font-weight: 600;
+    color: #323130;
+    border-bottom: 2px solid #e1dfdd;
+    background: #f3f2f1;
+}
+
+.data-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #e1dfdd;
+}
+
+.data-table tbody tr:hover {
+    background: #f9f9f9;
+}
+
+.action-btn {
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    border: 1px solid #8a8886;
+    background: white;
+    color: #323130;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.action-btn:hover {
+    background: #f3f2f1;
+}
+
+/* Template UI Styles */
+.template-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.template-detail-card {
+    background: #f9f9f9;
+    border: 1px solid #e1dfdd;
+    border-radius: 6px;
+    padding: 1rem;
+}
+
+.template-detail-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #8a8886;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.template-detail-value {
+    font-size: 1.1rem;
+    color: #323130;
+    font-weight: 500;
+}
+
+.template-controls-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+}
+
+.btn-control {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1.25rem;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 600;
+}
+
+.btn-control i {
+    font-size: 1.5rem;
+}
+
+.btn-control-green {
+    border-color: #28a745;
+    color: #28a745;
+}
+
+.btn-control-green:hover {
+    background: #28a745;
+    color: white;
+}
+
+.btn-control-red {
+    border-color: #dc3545;
+    color: #dc3545;
+}
+
+.btn-control-red:hover {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-control-blue {
+    border-color: #0078d4;
+    color: #0078d4;
+}
+
+.btn-control-blue:hover {
+    background: #0078d4;
+    color: white;
+}
+
+.btn-control-gray {
+    border-color: #6c757d;
+    color: #6c757d;
+}
+
+.btn-control-gray:hover {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-control-orange {
+    border-color: #fd7e14;
+    color: #fd7e14;
+}
+
+.btn-control-orange:hover {
+    background: #fd7e14;
+    color: white;
+}
+
+.invite-link-box {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: white;
+    border: 2px solid #0078d4;
+    border-radius: 6px;
+}
+
+.invite-link-box input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid #e1dfdd;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.invite-link-box button {
+    padding: 0.75rem 1.5rem;
+    background: #0078d4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.invite-link-box button:hover {
+    background: #106ebe;
+}
+
+.students-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.student-card {
+    padding: 1rem;
+    background: #f9f9f9;
+    border: 1px solid #e1dfdd;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.student-card > div:first-child {
+    flex: 1;
+}
+
+.student-card-name {
+    font-weight: 600;
+    color: #323130;
+}
+
+.student-card-vm {
+    font-size: 0.85rem;
+    color: #605e5c;
+    margin-top: 0.25rem;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 26px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: #28a745;
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+
+input:disabled + .toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Minimal Icon Buttons */
+.btn-minimal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: white;
+    border: 1px solid #d1d1d1;
+    border-radius: 4px;
+    color: #605e5c;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn-minimal:hover {
+    background: #f3f2f1;
+    border-color: #8a8886;
+    color: #323130;
+}
+
+.btn-minimal:active {
+    background: #e1dfdd;
+}
+
+.btn-minimal i {
+    font-size: 1rem;
+}
+
+/* Header Buttons - Compact icon buttons for template header */
+.btn-header {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: white;
+    border: 1px solid #d1d1d1;
+    border-radius: 4px;
+    color: #605e5c;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: 8px;
+}
+
+.btn-header:hover {
+    background: #f3f2f1;
+    border-color: #8a8886;
+    color: #323130;
+}
+
+.btn-header:active {
+    background: #e1dfdd;
+}
+
+.btn-header i {
+    font-size: 1rem;
+}
+
+.btn-header:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Large Action Buttons - For template management actions */
+.btn-action-large {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 16px;
+    border: 1px solid;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    text-align: center;
+    min-height: 120px;
+}
+
+.btn-action-large i {
+    font-size: 2rem;
+    margin-bottom: 12px;
+}
+
+.btn-action-large .btn-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.btn-action-large .btn-subtitle {
+    font-size: 0.8125rem;
+    opacity: 0.85;
+}
+
+.btn-action-large:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Gray Action Button */
+.btn-gray {
+    border-color: #8a8886;
+    color: #323130;
+}
+
+.btn-gray:hover:not(:disabled) {
+    background: #f3f2f1;
+    border-color: #605e5c;
+}
+
+.btn-gray:active:not(:disabled) {
+    background: #e1dfdd;
+}
+
+/* Blue Action Button */
+.btn-blue {
+    border-color: #0078d4;
+    color: #0078d4;
+}
+
+.btn-blue:hover:not(:disabled) {
+    background: #f3f9fd;
+    border-color: #005a9e;
+}
+
+.btn-blue:active:not(:disabled) {
+    background: #deecf9;
+}
+
+/* Orange Action Button */
+.btn-orange {
+    border-color: #f7630c;
+    color: #d13200;
+}
+
+.btn-orange:hover:not(:disabled) {
+    background: #fff9f5;
+    border-color: #d13200;
+}
+
+.btn-orange:active:not(:disabled) {
+    background: #feedde;
+}
+</style>
+
+<script>
+const classId = {{ class_.id }};
+let currentTemplateInfo = null;
+
+function showSection(section) {
+    // Hide all sections
+    document.querySelectorAll('.content-section').forEach(el => el.style.display = 'none');
+    
+    // Remove active class from all links
+    document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('sidebar-link-active'));
+    
+    // Show selected section
+    document.getElementById(section + '-section').style.display = 'block';
+    
+    // Add active class to clicked link
+    event.target.closest('.sidebar-link').classList.add('sidebar-link-active');
+}
+
+let templateLoadAttempts = 0;
+const TEMPLATE_MAX_ATTEMPTS = 12; // ~60s if interval 5s
+let templatePollingActive = false;
+let templateStatusInterval = null; // For continuous status updates
+
+function startTemplatePolling() {
+    if (templatePollingActive) return;
+    templatePollingActive = true;
+    templateLoadAttempts = 0;
+    document.getElementById('template-status-text').textContent = 'Initializing template...';
+    pollTemplateInfo();
+}
+
+function startContinuousStatusUpdates() {
+    // Start polling every 10 seconds to keep status in sync
+    if (templateStatusInterval) {
+        clearInterval(templateStatusInterval);
+    }
+    templateStatusInterval = setInterval(async () => {
+        // Don't update toggle if user is actively performing an action
+        if (window.vmActionInProgress) {
+            return;
+        }
+        
+        try {
+            const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+            
+            // Check if response is OK before parsing JSON
+            if (!resp.ok) {
+                console.warn(`Template status poll failed: ${resp.status} ${resp.statusText}`);
+                return;
+            }
+            
+            // Check content type to ensure it's JSON
+            const contentType = resp.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                console.warn(`Template status returned non-JSON response: ${contentType}`);
+                return;
+            }
+            
+            const data = await resp.json();
+            
+            if (data.ok && data.template) {
+                currentTemplateInfo = data.template;
+                // Update power toggle to reflect current status (but not during user action)
+                const powerToggle = document.getElementById('power-toggle');
+                if (powerToggle && !powerToggle.disabled && !window.vmActionInProgress) {
+                    const isRunning = currentTemplateInfo.status === 'running';
+                    powerToggle.checked = isRunning;
+                }
+                // Update IP if changed
+                const ipEl = document.getElementById('template-ip');
+                if (ipEl && currentTemplateInfo.ip) {
+                    ipEl.textContent = currentTemplateInfo.ip;
+                    ipEl.style.color = '#0b6a0b';
+                } else if (ipEl && !currentTemplateInfo.ip) {
+                    ipEl.textContent = '(no IP)';
+                    ipEl.style.color = '#a80000';
+                }
+            }
+        } catch (e) {
+            // Silently fail on JSON parse errors during background polling
+            // This prevents console spam from transient network issues
+            if (e instanceof SyntaxError && e.message.includes('JSON')) {
+                // JSON parse error - likely transient, ignore
+                return;
+            }
+            console.error('Failed to update template status:', e);
+        }
+    }, 10000); // Update every 10 seconds
+}
+
+async function pollTemplateInfo() {
+    templateLoadAttempts++;
+    const attemptEl = document.getElementById('template-retry-count');
+    const maxEl = document.getElementById('template-retry-max');
+    const retryText = document.getElementById('template-retry-text');
+    if (attemptEl && maxEl) {
+        attemptEl.textContent = templateLoadAttempts;
+        maxEl.textContent = TEMPLATE_MAX_ATTEMPTS;
+        retryText.style.display = templateLoadAttempts > 1 ? 'block' : 'none';
+    }
+    try {
+        const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+        const data = await resp.json();
+        
+        // Check if class is still being created (202 status with progress)
+        if (resp.status === 202 && data.progress) {
+            // Switch to progress polling
+            handleTemplateCreationInProgress(data.progress);
+            return;
+        }
+        
+        if (data.ok && resp.ok) {
+            currentTemplateInfo = data.template;
+            updateTemplateDisplay();
+            templatePollingActive = false;
+            // Start continuous status updates now that template is loaded
+            startContinuousStatusUpdates();
+            return;
+        }
+        // Not ready yet, keep polling
+        handleTemplatePending(data.error || 'Template not ready');
+    } catch (e) {
+        handleTemplatePending(e.message || 'Waiting for template');
+    }
+    if (templateLoadAttempts < TEMPLATE_MAX_ATTEMPTS) {
+        setTimeout(pollTemplateInfo, 5000); // 5s interval
+    } else {
+        // Give up
+        document.getElementById('template-status-text').textContent = 'Template load timed out. You can retry manually.';
+        const spinner = document.getElementById('template-spinner');
+        if (spinner) spinner.style.display = 'none';
+        showAlert('Template initialization timed out. Try refresh.', 'error');
+        templatePollingActive = false;
+    }
+}
+
+function handleTemplateCreationInProgress(progress) {
+    // Show progress details instead of generic waiting message
+    const statusEl = document.getElementById('template-status-text');
+    if (!statusEl) return;
+    
+    const percent = progress.completed ? Math.round((progress.completed / 5) * 100) : 0;
+    statusEl.textContent = progress.message || `Creating class VMs... ${percent}%`;
+    
+    // Continue polling but switch to progress endpoint if we have task_id
+    if (progress.task_id) {
+        setTimeout(() => pollCreationProgress(progress.task_id), 3000);
+    } else {
+        setTimeout(pollTemplateInfo, 5000);
+    }
+}
+
+async function pollCreationProgress(taskId) {
+    try {
+        const resp = await fetch(`/api/classes/clone/progress/${taskId}`);
+        const progress = await resp.json();
+        
+        const statusEl = document.getElementById('template-status-text');
+        if (!statusEl) return;
+        
+        if (progress.status === 'completed') {
+            statusEl.textContent = 'Class creation complete! Loading template...';
+            // Switch back to template info polling
+            setTimeout(pollTemplateInfo, 2000);
+            return;
+        }
+        
+        if (progress.status === 'failed') {
+            const spinner = document.getElementById('template-spinner');
+            if (spinner) spinner.style.display = 'none';
+            statusEl.textContent = `Class creation failed: ${progress.error || 'Unknown error'}`;
+            showAlert(progress.error || 'Class creation failed', 'error');
+            templatePollingActive = false;
+            return;
+        }
+        
+        // Still running - show progress with percentage
+        const percent = progress.progress_percent ? Math.round(progress.progress_percent) : 0;
+        statusEl.textContent = progress.message || `Creating class VMs... ${percent}%`;
+        
+        // Continue polling progress
+        setTimeout(() => pollCreationProgress(taskId), 3000);
+    } catch (e) {
+        // Fallback to template info polling on error
+        setTimeout(pollTemplateInfo, 5000);
+    }
+}
+
+function handleTemplatePending(reason) {
+    const statusEl = document.getElementById('template-status-text');
+    if (!statusEl) return;
+    statusEl.textContent = `Waiting for template... (${reason})`;
+}
+
+function loadTemplateInfo() {
+    // Begin polling sequence
+    startTemplatePolling();
+}
+
+function updateTemplateDisplay() {
+    // Hide status block, show info
+    const statusBlock = document.getElementById('template-status');
+    if (statusBlock) statusBlock.style.display = 'none';
+    document.getElementById('template-info').style.display = 'block';
+    
+    if (!currentTemplateInfo) return;
+    
+    document.getElementById('template-name').textContent = currentTemplateInfo.name;
+    document.getElementById('template-vmid').textContent = currentTemplateInfo.proxmox_vmid;
+    document.getElementById('template-node').textContent = currentTemplateInfo.node || 'N/A';
+    
+    // Update power status badge
+    const powerBadge = document.getElementById('template-power-status');
+    if (powerBadge) {
+        // Debug: log the status to see what we're getting
+        console.log('Template status:', currentTemplateInfo.status, typeof currentTemplateInfo.status);
+        
+        let statusText = 'unknown';
+        if (currentTemplateInfo.status) {
+            // Handle if status is an object with a status property
+            if (typeof currentTemplateInfo.status === 'object' && currentTemplateInfo.status.status) {
+                statusText = String(currentTemplateInfo.status.status).toLowerCase();
+            } else {
+                statusText = String(currentTemplateInfo.status).toLowerCase();
+            }
+        }
+        
+        powerBadge.className = 'power-badge power-badge-' + statusText;
+        powerBadge.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
+    }
+    
+    const ipEl = document.getElementById('template-ip');
+    if (ipEl) {
+        if (currentTemplateInfo.ip) {
+            ipEl.textContent = currentTemplateInfo.ip;
+            ipEl.style.color = '#0b6a0b';
+        } else {
+            ipEl.textContent = '(no IP)';
+            ipEl.style.color = '#a80000';
+        }
+    }
+    
+    // Update power toggle based on current status
+    const powerToggle = document.getElementById('power-toggle');
+    if (powerToggle) {
+        // Extract actual status string
+        let statusStr = 'stopped';
+        if (currentTemplateInfo.status) {
+            if (typeof currentTemplateInfo.status === 'object' && currentTemplateInfo.status.status) {
+                statusStr = String(currentTemplateInfo.status.status).toLowerCase();
+            } else {
+                statusStr = String(currentTemplateInfo.status).toLowerCase();
+            }
+        }
+        const isRunning = statusStr === 'running';
+        
+        // Don't update toggle during power transition (user just toggled it)
+        if (!window.vmPowerTransition) {
+            // Only update toggle if it doesn't match Proxmox state
+            // This allows the toggle to stay in user's selected position
+            // unless Proxmox reports a different state
+            if (powerToggle.checked !== isRunning) {
+                powerToggle.checked = isRunning;
+                console.log('🔌 Power toggle updated to match Proxmox: status=' + statusStr + ', checked=' + isRunning);
+            }
+        } else {
+            console.log('🔌 Skipping toggle update during transition');
+        }
+    }
+    
+    // Update power buttons based on VM status
+    const startBtn = document.getElementById('btn-start-template');
+    const stopBtn = document.getElementById('btn-stop-template');
+    if (startBtn && stopBtn) {
+        // Extract actual status string
+        let statusStr = 'stopped';
+        if (currentTemplateInfo.status) {
+            if (typeof currentTemplateInfo.status === 'object' && currentTemplateInfo.status.status) {
+                statusStr = String(currentTemplateInfo.status.status).toLowerCase();
+            } else {
+                statusStr = String(currentTemplateInfo.status).toLowerCase();
+            }
+        }
+        const isRunning = statusStr === 'running';
+        console.log('🔌 Updating buttons: status=' + statusStr + ', isRunning=' + isRunning);
+        startBtn.style.display = isRunning ? 'none' : 'inline-flex';
+        stopBtn.style.display = isRunning ? 'inline-flex' : 'none';
+    }
+    
+    // RDP button: enable if VM has IP address
+    const rdpBtn = document.getElementById('btn-rdp-template');
+    if (currentTemplateInfo.ip) {
+        rdpBtn.style.display = 'inline-flex';
+        rdpBtn.disabled = false;
+        rdpBtn.title = 'Download RDP File';
+    } else {
+        rdpBtn.style.display = 'inline-flex';
+        rdpBtn.disabled = true;
+        rdpBtn.title = 'RDP unavailable (no IP address)';
+    }
+}
+
+async function togglePower(event) {
+    // Prevent the checkbox from changing until we're ready
+    event.preventDefault();
+    
+    const powerToggle = document.getElementById('power-toggle');
+    const currentState = powerToggle.checked;
+    const shouldStart = !currentState; // Opposite of current state (what user wants)
+    
+    console.log(`🔌 Toggle clicked: currentState=${currentState}, shouldStart=${shouldStart}, vmStatus=${currentTemplateInfo?.status}`);
+    
+    // Disable toggle during operation
+    powerToggle.disabled = true;
+    
+    // Set flag to prevent status polling from overriding toggle during transition
+    window.vmPowerTransition = true;
+    
+    try {
+        if (shouldStart) {
+            await startTemplate();
+        } else {
+            await stopTemplate();
+        }
+        
+        // Success - update toggle to reflect desired state
+        powerToggle.checked = shouldStart;
+        
+        // Start polling to catch state changes
+        const pollIntervals = [500, 2000, 4000, 7000, 12000, 20000];
+        
+        pollIntervals.forEach((delay, index) => {
+            setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+                    const data = await resp.json();
+                    if (data.ok && data.template) {
+                        const oldStatus = currentTemplateInfo.status;
+                        currentTemplateInfo = data.template;
+                        
+                        // Check if VM reached desired state
+                        const desiredState = shouldStart ? 'running' : 'stopped';
+                        if (currentTemplateInfo.status === desiredState) {
+                            console.log(`✅ VM reached desired state: ${desiredState}`);
+                            window.vmPowerTransition = false;
+                        }
+                        
+                        if (oldStatus !== currentTemplateInfo.status) {
+                            console.log(`✅ VM status changed: ${oldStatus} → ${currentTemplateInfo.status}`);
+                        }
+                        
+                        updateTemplateDisplay();
+                    }
+                } catch (e) {
+                    console.error('Failed to refresh template status:', e);
+                }
+                
+                // Clear transition flag after last poll
+                if (index === pollIntervals.length - 1) {
+                    setTimeout(() => {
+                        window.vmPowerTransition = false;
+                    }, 100);
+                }
+            }, delay);
+        });
+        
+    } catch (e) {
+        // Error or cancellation - keep toggle in current state (don't change it)
+        if (e.message !== 'CANCELLED') {
+            console.error('Power toggle action failed:', e.message);
+        }
+        // powerToggle.checked stays as it was (currentState)
+        window.vmPowerTransition = false;
+    } finally {
+        // Re-enable toggle
+        powerToggle.disabled = false;
+    }
+}
+
+// Simple start/stop handlers
+async function handleStartTemplate() {
+    const btn = document.getElementById('btn-start-template');
+    btn.disabled = true;
+    try {
+        await startTemplate();
+        // Refresh status after a delay
+        setTimeout(async () => {
+            await refreshTemplateInfo();
+        }, 2000);
+    } catch (e) {
+        console.error('Start failed:', e);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function handleStopTemplate() {
+    const btn = document.getElementById('btn-stop-template');
+    btn.disabled = true;
+    try {
+        await stopTemplate();
+        // Refresh status after a delay
+        setTimeout(async () => {
+            await refreshTemplateInfo();
+        }, 2000);
+    } catch (e) {
+        console.error('Stop failed:', e);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function refreshTemplateInfo() {
+    try {
+        const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+        
+        // Handle non-OK responses
+        if (!resp.ok) {
+            console.warn(`Template info fetch returned ${resp.status}: ${resp.statusText}`);
+            return;
+        }
+        
+        const data = await resp.json();
+        if (data.ok && data.template) {
+            currentTemplateInfo = data.template;
+            updateTemplateDisplay();
+            console.log('✅ Template info refreshed');
+        } else {
+            console.warn('Template info response not OK:', data);
+        }
+    } catch (e) {
+        console.error('Failed to refresh template info:', e);
+        // Don't throw - just log and continue
+    }
+}
+
+function sshToTemplate() {
+    if (!currentTemplateInfo) return;
+    window.open(`/ssh/${currentTemplateInfo.proxmox_vmid}`, '_blank');
+}
+
+function consoleToTemplate() {
+    if (!currentTemplateInfo) return;
+    
+    // Open custom console page with embedded noVNC
+    const width = 1280;
+    const height = 800;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    window.open(
+        `/api/console/${currentTemplateInfo.proxmox_vmid}/view2`,
+        `console-${currentTemplateInfo.proxmox_vmid}`,
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no`
+    );
+}
+
+async function startTemplate() {
+    if (!confirm('Start the template VM?')) {
+        // User cancelled
+        throw new Error('CANCELLED');
+    }
+    
+    const resp = await fetch(`/api/classes/${classId}/template/start`, { method: 'POST' });
+    const data = await resp.json();
+    
+    if (data.ok) {
+        showAlert(data.message, 'success');
+    } else {
+        showAlert(data.error || 'Failed to start template', 'error');
+        throw new Error(data.error || 'Failed to start template');
+    }
+}
+
+async function stopTemplate() {
+    if (!confirm('Stop the template VM?')) {
+        // User cancelled
+        throw new Error('CANCELLED');
+    }
+    
+    const resp = await fetch(`/api/classes/${classId}/template/stop`, { method: 'POST' });
+    const data = await resp.json();
+    
+    if (data.ok) {
+        showAlert(data.message, 'success');
+    } else {
+        showAlert(data.error || 'Failed to stop template', 'error');
+        throw new Error(data.error || 'Failed to stop template');
+    }
+}
+
+function rdpToTemplate() {
+    if (!currentTemplateInfo) return;
+    window.location.href = `/rdp/${currentTemplateInfo.proxmox_vmid}.rdp`;
+}
+
+async function reimageTemplate() {
+    // Check deployment method and show appropriate confirmation
+    const deploymentMethod = {{ class_.deployment_method | tojson }};
+    
+    let confirmMsg;
+    if (deploymentMethod === 'linked_clone') {
+        confirmMsg = 'Revert template VM to snapshot baseline? This will discard all changes made to the template VM.';
+    } else {
+        confirmMsg = 'Revert template to baseline? This will delete the current teacher VM and recreate a fresh copy from the baseline. All changes will be lost.';
+    }
+    
+    if (!confirm(confirmMsg)) return;
+    
+    try {
+        const resp = await fetch(`/api/classes/${classId}/template/reimage`, { method: 'POST' });
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(data.message || 'Template reverted successfully', 'success');
+            // Reload page to show updated VM status
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            showAlert(data.error || 'Failed to reimage template', 'error');
+        }
+    } catch (e) {
+        showAlert('Failed to reimage template: ' + e.message, 'error');
+    }
+}
+
+async function saveTemplate() {
+    if (!confirm('Save teacher VM changes to class template? This will update the base template (students are NOT affected until you click Push).')) return;
+    
+    showAlert('Saving teacher VM to class template...', 'info');
+    
+    try {
+        const resp = await fetch(`/api/classes/${classId}/template/save`, { method: 'POST' });
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(data.message || 'Template saved successfully. Click "Push to VMs" to update students.', 'success');
+        } else {
+            showAlert(data.error || 'Failed to save template', 'error');
+        }
+    } catch (e) {
+        showAlert('Failed to save template: ' + e.message, 'error');
+    }
+}
+
+async function pushTemplate() {
+    if (!confirm('Push template to all student VMs?\n\nThis will:\n1. Copy class template disk to all student VMs\n2. Replace student VM disks (VM shells stay intact)\n3. Students lose their current work and get the updated template\n\nThis operation runs in the background and may take several minutes. Are you sure?')) return;
+    
+    showAlert('Pushing template to student VMs... This runs in the background and may take several minutes.', 'info');
+    
+    try {
+        const resp = await fetch(`/api/classes/${classId}/template/push`, { method: 'POST' });
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(data.message || 'Template push started successfully', 'success');
+            // Refresh VMs after a delay to see updated status
+            setTimeout(() => location.reload(), 5000);
+        } else {
+            showAlert(data.error || 'Failed to push template', 'error');
+        }
+    } catch (e) {
+        showAlert('Failed to push template: ' + e.message, 'error');
+    }
+}
+
+async function refreshVMs() {
+    const refreshBtn = event?.target?.closest('button');
+    
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<i class="ti ti-hourglass"></i> Discovering IPs...';
+    }
+    
+    try {
+        // Trigger force IP discovery for this class
+        const response = await fetch(`/api/classes/{{ class_.id }}/refresh-ips`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            showAlert(`${data.message}. Refreshing page...`, 'success');
+            // Wait a bit for database to update, then reload
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showAlert(data.error || 'Failed to refresh IPs', 'error');
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="ti ti-refresh"></i> Refresh';
+            }
+        }
+    } catch (e) {
+        console.error('Refresh failed:', e);
+        showAlert('Failed to refresh: ' + e.message, 'error');
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="ti ti-refresh"></i> Refresh';
+        }
+    }
+}
+
+function viewVM(vmid) {
+    // Navigate to portal with VM highlighted
+    window.location.href = `/portal#vm-${vmid}`;
+}
+
+// VM actions for student VMs
+async function startVm(vmid, node) {
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/start`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            showAlert('Failed to start VM: ' + (data.error || 'Unknown error'), 'error');
+        } else {
+            showAlert('VM starting...', 'info');
+            // Start polling for IP
+            setTimeout(() => pollVmForIP(vmid), 3000);
+        }
+        setTimeout(() => updateVmRow(vmid), 2000);
+    } catch (e) {
+        showAlert('Error starting VM', 'error');
+    }
+}
+
+async function stopVm(vmid, node) {
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/stop`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            showAlert('Failed to stop VM: ' + (data.error || 'Unknown error'), 'error');
+        } else {
+            showAlert('VM stopping...', 'info');
+        }
+        setTimeout(() => updateVmRow(vmid), 2000);
+    } catch (e) {
+        showAlert('Error stopping VM', 'error');
+    }
+}
+
+async function revertVm(vmid, node) {
+    if (!confirm('Revert this VM to the class baseline? All changes will be lost!')) return;
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/revert`, { method: 'POST' });
+        const data = await resp.json();
+        if (!data.ok) {
+            showAlert('Failed to revert VM: ' + (data.error || 'Unknown error'), 'error');
+        } else {
+            showAlert('VM reverted to baseline', 'success');
+        }
+        setTimeout(() => updateVmRow(vmid), 2000);
+    } catch (e) {
+        showAlert('Error reverting VM', 'error');
+    }
+}
+
+function sshVm(vmid, ip, name) {
+    // Build URL with query parameters for IP and name
+    const params = new URLSearchParams();
+    if (ip && ip !== 'N/A') {
+        params.append('ip', ip);
+    }
+    if (name && name !== 'N/A') {
+        params.append('name', name);
+    }
+    
+    const url = `/ssh/${vmid}${params.toString() ? '?' + params.toString() : ''}`;
+    
+    // Open in popup window (1000x600, centered)
+    const width = 1000;
+    const height = 600;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    window.open(
+        url,
+        `ssh-${vmid}`,
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+}
+
+function consoleVm(vmid) {
+    // Open custom console page with embedded noVNC
+    const width = 1280;
+    const height = 800;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    window.open(
+        `/api/console/${vmid}/view2`,
+        `console-${vmid}`,
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no`
+    );
+}
+
+// Student VM Functions (for simplified student view)
+async function studentStartVM() {
+    const vmid = document.getElementById('student-vm-vmid').textContent;
+    const startBtn = document.getElementById('student-start-btn');
+    const stopBtn = document.getElementById('student-stop-btn');
+    
+    startBtn.disabled = true;
+    startBtn.innerHTML = '<i class="ti ti-hourglass"></i> Starting...';
+    
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/start`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert('VM is starting...', 'success');
+            setTimeout(() => updateStudentVM(), 3000);
+        } else {
+            showAlert('Failed to start VM: ' + (data.error || 'Unknown error'), 'error');
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="ti ti-player-play-filled"></i> Start';
+        }
+    } catch (e) {
+        showAlert('Error starting VM: ' + e.message, 'error');
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="ti ti-player-play-filled"></i> Start';
+    }
+}
+
+async function studentStopVM() {
+    const vmid = document.getElementById('student-vm-vmid').textContent;
+    const startBtn = document.getElementById('student-start-btn');
+    const stopBtn = document.getElementById('student-stop-btn');
+    
+    if (!confirm('Stop your VM? Any unsaved work will be lost.')) return;
+    
+    stopBtn.disabled = true;
+    stopBtn.innerHTML = '<i class="ti ti-hourglass"></i> Stopping...';
+    
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/stop`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert('VM is stopping...', 'success');
+            setTimeout(() => updateStudentVM(), 3000);
+        } else {
+            showAlert('Failed to stop VM: ' + (data.error || 'Unknown error'), 'error');
+            stopBtn.disabled = false;
+            stopBtn.innerHTML = '<i class="ti ti-player-stop-filled"></i> Stop';
+        }
+    } catch (e) {
+        showAlert('Error stopping VM: ' + e.message, 'error');
+        stopBtn.disabled = false;
+        stopBtn.innerHTML = '<i class="ti ti-player-stop-filled"></i> Stop';
+    }
+}
+
+async function studentOpenConsole() {
+    const vmid = document.getElementById('student-vm-vmid').textContent;
+    
+    // Open custom console page with embedded noVNC
+    const width = 1280;
+    const height = 800;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    window.open(
+        `/api/console/${vmid}/view2`,
+        `console-${vmid}`,
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no`
+    );
+}
+
+function studentDownloadRDP() {
+    const vmid = document.getElementById('student-vm-vmid').textContent;
+    window.location.href = `/rdp/${vmid}.rdp`;
+}
+
+function studentOpenSSH() {
+    const vmid = document.getElementById('student-vm-vmid').textContent;
+    const ip = document.getElementById('student-vm-ip').textContent;
+    const name = document.getElementById('student-vm-name').textContent;
+    
+    // Build URL with query parameters
+    const params = new URLSearchParams();
+    if (ip && ip !== 'N/A') {
+        params.append('ip', ip);
+    }
+    if (name && name !== 'N/A') {
+        params.append('name', name);
+    }
+    
+    const url = `/ssh/${vmid}${params.toString() ? '?' + params.toString() : ''}`;
+    
+    // Open in popup window
+    const width = 1000;
+    const height = 600;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    window.open(
+        url,
+        `ssh-${vmid}`,
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+}
+
+async function updateStudentVM() {
+    const vmid = document.getElementById('student-vm-vmid').textContent;
+    
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/status`);
+        const data = await resp.json();
+        
+        if (data.ok) {
+            const statusEl = document.getElementById('student-vm-status');
+            const ipEl = document.getElementById('student-vm-ip');
+            const startBtn = document.getElementById('student-start-btn');
+            const stopBtn = document.getElementById('student-stop-btn');
+            const rdpBtn = document.getElementById('student-rdp-btn');
+            const sshBtn = document.getElementById('student-ssh-btn');
+            
+            // Update status
+            statusEl.textContent = data.status;
+            statusEl.className = `status-badge status-${data.status}`;
+            
+            // Update IP
+            if (data.ip) {
+                ipEl.textContent = data.ip;
+                rdpBtn.disabled = false;
+                sshBtn.disabled = false;
+            }
+            
+            // Update buttons
+            if (data.status === 'running') {
+                startBtn.disabled = true;
+                startBtn.innerHTML = '<i class="ti ti-player-play-filled"></i> Start';
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = '<i class="ti ti-player-stop-filled"></i> Stop';
+            } else {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="ti ti-player-play-filled"></i> Start';
+                stopBtn.disabled = true;
+                stopBtn.innerHTML = '<i class="ti ti-player-stop-filled"></i> Stop';
+            }
+        }
+    } catch (e) {
+        console.error('Failed to update student VM:', e);
+    }
+}
+
+// Bulk operations
+function toggleAllVMs(checkbox) {
+    const checkboxes = document.querySelectorAll('.vm-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateBulkButtons();
+}
+
+function updateBulkButtons() {
+    const checked = document.querySelectorAll('.vm-checkbox:checked').length;
+    const startBtn = document.getElementById('bulk-start-btn');
+    const stopBtn = document.getElementById('bulk-stop-btn');
+    
+    if (checked > 0) {
+        startBtn.style.display = 'inline-flex';
+        stopBtn.style.display = 'inline-flex';
+        startBtn.textContent = `Start ${checked} VM${checked > 1 ? 's' : ''}`;
+        stopBtn.textContent = `Stop ${checked} VM${checked > 1 ? 's' : ''}`;
+    } else {
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'none';
+    }
+}
+
+async function bulkStartVMs() {
+    const checkboxes = document.querySelectorAll('.vm-checkbox:checked');
+    if (checkboxes.length === 0) return;
+    
+    // Filter to only stopped VMs
+    const stoppedVMs = [];
+    const vmids = [];
+    const vmNames = [];
+    
+    for (const cb of checkboxes) {
+        const vmid = parseInt(cb.value);
+        const statusBadge = document.getElementById(`status-${vmid}`);
+        const status = statusBadge
+            ? statusBadge.textContent.replace('●', '').trim().toLowerCase()
+            : '';
+        
+        // Only include stopped VMs
+        if (status === 'stopped') {
+            const nameEl = document.getElementById(`name-${vmid}`);
+            stoppedVMs.push({ vmid, name: nameEl ? nameEl.textContent : `VM ${vmid}` });
+            vmids.push(vmid);
+            if (nameEl) {
+                vmNames.push(nameEl.textContent);
+            }
+        }
+    }
+    
+    if (stoppedVMs.length === 0) {
+        showAlert('No stopped VMs selected', 'warning');
+        return;
+    }
+    
+    const skipped = checkboxes.length - stoppedVMs.length;
+    const confirmMsg = skipped > 0 
+        ? `Start ${stoppedVMs.length} VM(s)? (${skipped} already running will be skipped)`
+        : `Start ${stoppedVMs.length} VM(s)?`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    for (const vm of stoppedVMs) {
+        try {
+            await fetch(`/api/vm/${vm.vmid}/start`, { method: 'POST' });
+        } catch (e) {
+            console.error(`Failed to start VM ${vm.vmid}:`, e);
+        }
+    }
+    
+    // Show single alert with list of VMs
+    const vmList = vmNames.join(', ');
+    showAlert(`Starting ${stoppedVMs.length} VM(s): ${vmList}`, 'success');
+    
+    // Uncheck all
+    document.getElementById('select-all-vms').checked = false;
+    checkboxes.forEach(cb => cb.checked = false);
+    updateBulkButtons();
+    
+    // Start polling for IP addresses
+    setTimeout(() => {
+        vmids.forEach(vmid => pollVmForIP(vmid));
+        refreshVMs();
+    }, 3000);
+}
+
+async function bulkStopVMs() {
+    const checkboxes = document.querySelectorAll('.vm-checkbox:checked');
+    if (checkboxes.length === 0) return;
+    
+    // Filter to only running VMs
+    const runningVMs = [];
+    const vmNames = [];
+    
+    for (const cb of checkboxes) {
+        const vmid = parseInt(cb.value);
+        const statusBadge = document.getElementById(`status-${vmid}`);
+        const status = statusBadge
+            ? statusBadge.textContent.replace('●', '').trim().toLowerCase()
+            : '';
+        
+        // Only include running VMs
+        if (status === 'running') {
+            const nameEl = document.getElementById(`name-${vmid}`);
+            runningVMs.push({ vmid, name: nameEl ? nameEl.textContent : `VM ${vmid}` });
+            if (nameEl) {
+                vmNames.push(nameEl.textContent);
+            }
+        }
+    }
+    
+    if (runningVMs.length === 0) {
+        showAlert('No running VMs selected', 'warning');
+        return;
+    }
+    
+    const skipped = checkboxes.length - runningVMs.length;
+    const confirmMsg = skipped > 0 
+        ? `Stop ${runningVMs.length} VM(s)? (${skipped} already stopped will be skipped)`
+        : `Stop ${runningVMs.length} VM(s)?`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    for (const vm of runningVMs) {
+        try {
+            await fetch(`/api/vm/${vm.vmid}/stop`, { method: 'POST' });
+        } catch (e) {
+            console.error(`Failed to stop VM ${vm.vmid}:`, e);
+        }
+    }
+    
+    // Show single alert with list of VMs
+    const vmList = vmNames.join(', ');
+    showAlert(`Stopping ${runningVMs.length} VM(s): ${vmList}`, 'success');
+    
+    // Uncheck all
+    document.getElementById('select-all-vms').checked = false;
+    checkboxes.forEach(cb => cb.checked = false);
+    updateBulkButtons();
+    
+    setTimeout(() => refreshVMs(), 2000);
+}
+
+// Poll for VM IP address after startup
+async function pollVmForIP(vmid, attempts = 0) {
+    const maxAttempts = 10; // Poll for up to 50 seconds (5s intervals)
+    
+    if (attempts >= maxAttempts) {
+        console.log(`Stopped polling for VM ${vmid} IP after ${maxAttempts} attempts`);
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/vm/${vmid}/ip`);
+        const data = await resp.json();
+        
+        if (data.ok && data.ip) {
+            // Found IP, update display
+            const ipCell = document.getElementById(`ip-${vmid}`);
+            if (ipCell) {
+                ipCell.textContent = data.ip;
+                ipCell.style.color = '#0b6a0b';
+            }
+            console.log(`Found IP for VM ${vmid}: ${data.ip}`);
+            return;
+        }
+        
+        // No IP yet, try again
+        setTimeout(() => pollVmForIP(vmid, attempts + 1), 5000);
+    } catch (e) {
+        console.error(`Error polling IP for VM ${vmid}:`, e);
+        setTimeout(() => pollVmForIP(vmid, attempts + 1), 5000);
+    }
+}
+
+function rdpVm(vmid) {
+    window.location.href = `/rdp/${vmid}.rdp`;
+}
+
+async function updateVmRow(vmid) {
+    try {
+        const resp = await fetch(`/api/classes/${classId}/vms`);
+        const data = await resp.json();
+        if (!data.ok) return;
+        const vm = (data.vms || []).find(v => v.proxmox_vmid === vmid);
+        if (!vm) return;
+        const statusEl = document.getElementById(`status-${vmid}`);
+        const macEl = document.getElementById(`mac-${vmid}`);
+        const ipEl = document.getElementById(`ip-${vmid}`);
+        if (statusEl) statusEl.textContent = vm.status || 'unknown';
+        if (macEl) macEl.textContent = vm.mac || 'N/A';
+        if (ipEl) ipEl.textContent = vm.ip || 'N/A';
+    } catch {}
+}
+
+async function refreshAllVMs() {
+    try {
+        const resp = await fetch(`/api/classes/${classId}/vms`);
+        const data = await resp.json();
+        if (!data.ok) return;
+        
+        console.log('refreshAllVMs received:', data.vms);  // Debug logging
+        
+        (data.vms || []).forEach(vm => {
+            console.log(`Updating VM ${vm.proxmox_vmid}: mac=${vm.mac}, ip=${vm.ip}, status=${vm.status}`);  // Debug logging
+            const statusEl = document.getElementById(`status-${vm.proxmox_vmid}`);
+            const macEl = document.getElementById(`mac-${vm.proxmox_vmid}`);
+            const ipEl = document.getElementById(`ip-${vm.proxmox_vmid}`);
+            if (statusEl) statusEl.textContent = vm.status || 'unknown';
+            if (macEl) macEl.textContent = vm.mac || 'N/A';
+            if (ipEl) ipEl.textContent = vm.ip || 'N/A';
+        });
+    } catch (e) {
+        console.error('Failed to refresh VMs:', e);
+    }
+}
+
+function showAlert(message, type = 'info') {
+    const container = document.getElementById('alert-container');
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type}`;
+    alert.style.cssText = 'padding: 1rem; margin-bottom: 1rem; border-radius: 6px; border-left: 4px solid;';
+    
+    if (type === 'success') {
+        alert.style.background = '#d4edda';
+        alert.style.color = '#155724';
+        alert.style.borderColor = '#28a745';
+    } else if (type === 'error') {
+        alert.style.background = '#f8d7da';
+        alert.style.color = '#721c24';
+        alert.style.borderColor = '#dc3545';
+    } else {
+        alert.style.background = '#d1ecf1';
+        alert.style.color = '#0c5460';
+        alert.style.borderColor = '#17a2b8';
+    }
+    
+    alert.textContent = message;
+    container.appendChild(alert);
+    
+    setTimeout(() => alert.remove(), 5000);
+}
+
+async function generateInviteLink() {
+    try {
+        const resp = await fetch(`/api/classes/${classId}/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ never_expires: true })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert('Invite link generated successfully!', 'success');
+            loadStudentsList(); // Refresh to show new link
+        } else {
+            showAlert(data.error || 'Failed to generate invite link', 'error');
+        }
+    } catch (e) {
+        showAlert('Failed to generate invite link', 'error');
+    }
+}
+
+async function deleteInviteLink() {
+    if (!confirm('Delete the invite link? Students will no longer be able to join using this link.')) return;
+    
+    try {
+        const resp = await fetch(`/api/classes/${classId}/invite`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert('Invite link deleted', 'success');
+            loadStudentsList(); // Refresh to hide link
+        } else {
+            showAlert(data.error || 'Failed to delete invite link', 'error');
+        }
+    } catch (e) {
+        showAlert('Failed to delete invite link', 'error');
+    }
+}
+
+function displayInviteLink(url) {
+    const display = document.getElementById('invite-display');
+    
+    if (!url) {
+        display.innerHTML = `
+            <div style="padding: 1.5rem; background: #f9f9f9; border-radius: 6px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                    <div>
+                        <p style="color: #666; margin: 0 0 0.5rem 0; font-weight: 500;">Invite Link Disabled</p>
+                        <p style="color: #999; font-size: 0.9rem; margin: 0;">Students cannot join this class via invite link</p>
+                    </div>
+                    <button onclick="generateInviteLink()" class="btn-primary" style="white-space: nowrap;">
+                        <i class="ti ti-link"></i> Enable Invite
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    display.innerHTML = `
+        <div style="padding: 1.5rem; background: #f0f8ff; border-radius: 6px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                    <p style="color: #0078d4; margin: 0 0 0.5rem 0; font-weight: 500;">Invite Link Active</p>
+                    <p style="color: #666; font-size: 0.9rem; margin: 0;">Students can join using this link</p>
+                </div>
+                <button onclick="deleteInviteLink()" class="btn-danger" style="white-space: nowrap;">
+                    <i class="ti ti-link-off"></i> Disable Invite
+                </button>
+            </div>
+            <div class="invite-link-box" style="margin-top: 1rem;">
+                <input type="text" value="${url}" readonly onclick="this.select()">
+                <button onclick="copyInviteLink('${url}')" style="background: #0078d4;">
+                    <i class="ti ti-clipboard"></i> Copy
+                </button>
+            </div>
+            <div style="margin-top: 0.75rem; font-size: 0.85rem; color: #605e5c;">
+                <i class="ti ti-info-circle"></i> This link never expires and can be used by multiple students.
+            </div>
+        </div>
+    `;
+}
+
+function copyInviteLink(url) {
+    navigator.clipboard.writeText(url).then(() => {
+        showAlert('Invite link copied to clipboard!', 'success');
+    }).catch(() => {
+        showAlert('Failed to copy link', 'error');
+    });
+}
+
+async function loadStudentsList() {
+    try {
+        const resp = await fetch(`/api/classes/${classId}`);
+        const data = await resp.json();
+        
+        if (data.ok) {
+            const students = data.class.students || [];
+            const studentsList = document.getElementById('students-list');
+            
+            if (students.length === 0) {
+                studentsList.innerHTML = '<p style="color: #666;">No students enrolled yet.</p>';
+            } else {
+                studentsList.innerHTML = `
+                    <div class="students-grid">
+                        ${students.map(s => `
+                            <div class="student-card">
+                                <div>
+                                    <div class="student-card-name">${s.username}</div>
+                                    <div class="student-card-vm">${s.vmid ? `VM: ${s.vmid}` : 'No VM assigned'}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            // Update invite link display (always, regardless of student count)
+            if (data.class.join_token) {
+                const baseUrl = window.location.origin;
+                const inviteUrl = `${baseUrl}/classes/join/${data.class.join_token}`;
+                displayInviteLink(inviteUrl);
+            } else {
+                displayInviteLink(null);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load students:', e);
+    }
+}
+
+let currentAssignStudent = null;
+let currentAssignUserId = null;
+
+async function showAssignVMModal(username, userId) {
+    currentAssignStudent = username;
+    currentAssignUserId = userId;
+    
+    // Fetch available VMs for this class
+    try {
+        const resp = await fetch(`/api/classes/${classId}/available-vms`);
+        const data = await resp.json();
+        
+        if (!data.ok) {
+            showAlert(data.error || 'Failed to load available VMs', 'error');
+            return;
+        }
+        
+        const modal = document.getElementById('assign-vm-modal');
+        const vmSelect = document.getElementById('assign-vm-select');
+        
+        // Populate VM dropdown
+        vmSelect.innerHTML = '<option value="">-- Select VM --</option>' + 
+            data.vms.map(vm => `
+                <option value="${vm.vmid}">${vm.name} (${vm.vmid}) - ${vm.assigned_to || 'Unassigned'}</option>
+            `).join('');
+        
+        document.getElementById('assign-student-name').textContent = username;
+        modal.style.display = 'flex';
+    } catch (e) {
+        showAlert('Failed to load available VMs', 'error');
+    }
+}
+
+function closeAssignVMModal() {
+    document.getElementById('assign-vm-modal').style.display = 'none';
+    currentAssignStudent = null;
+    currentAssignUserId = null;
+}
+
+async function confirmAssignVM() {
+    const vmid = document.getElementById('assign-vm-select').value;
+    
+    if (!vmid) {
+        showAlert('Please select a VM', 'error');
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/classes/${classId}/assign-vm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: currentAssignUserId,
+                vmid: parseInt(vmid)
+            })
+        });
+        
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error('Assign VM failed:', resp.status, errorText);
+            showAlert(`Failed to assign VM: ${resp.status} ${resp.statusText}`, 'error');
+            return;
+        }
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(`VM ${vmid} assigned to ${currentAssignStudent}`, 'success');
+            closeAssignVMModal();
+            loadStudentsList(); // Refresh the list
+        } else {
+            console.error('Assign VM error:', data);
+            showAlert(data.error || 'Failed to assign VM', 'error');
+        }
+    } catch (e) {
+        console.error('Assign VM exception:', e);
+        showAlert(`Failed to assign VM: ${e.message}`, 'error');
+    }
+}
+
+async function deleteClass() {
+    const className = '{{ class_.name }}';
+    const confirmation = prompt(`⚠️ WARNING: This will permanently delete the class AND all VMs!\n\n` +
+        `This will:\n` +
+        `• Stop and delete all student VMs\n` +
+        `• Delete the teacher VM\n` +
+        `• Delete the class-base template\n` +
+        `• Remove all student assignments\n` +
+        `• Cannot be undone!\n\n` +
+        `Type "${className}" to confirm deletion:`);
+    
+    if (confirmation !== className) {
+        if (confirmation !== null) {
+            showAlert('Class name did not match. Deletion cancelled.', 'error');
+        }
+        return;
+    }
+    
+    showAlert('Deleting class and VMs... This may take several minutes.', 'info');
+    
+    try {
+        // Full deletion (stops and deletes all VMs from Proxmox)
+        const resp = await fetch(`/api/classes/${classId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            const deletedCount = data.deleted_vms?.length || 0;
+            const failedCount = data.failed_vms?.length || 0;
+            
+            let message = `Class deleted successfully. ${deletedCount} VMs deleted`;
+            if (failedCount > 0) {
+                message += `, ${failedCount} VMs failed to delete (check logs)`;
+            }
+            
+            showAlert(message, 'success');
+            setTimeout(() => {
+                window.location.href = '/classes';
+            }, 3000);
+        } else {
+            showAlert(data.error || 'Failed to delete class', 'error');
+        }
+    } catch (e) {
+        showAlert('Failed to delete class: ' + e.message, 'error');
+    }
+}
+
+function showAddVMsModal() {
+    const modal = document.getElementById('add-vms-modal');
+    if (!modal) {
+        // Create modal if it doesn't exist
+        createAddVMsModal();
+    }
+    document.getElementById('add-vms-modal').style.display = 'flex';
+}
+
+function createAddVMsModal() {
+    const modalHTML = `
+        <div id="add-vms-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add VMs to Class</h3>
+                    <button class="modal-close" onclick="closeAddVMsModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Number of VMs to create</label>
+                        <input type="number" id="vm-count-input" value="1" min="1" max="50" class="form-control">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-secondary" onclick="closeAddVMsModal()">Cancel</button>
+                        <button class="btn-primary" onclick="createVMs()">
+                            <i class="ti ti-circle-plus"></i> Create VMs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closeAddVMsModal() {
+    document.getElementById('add-vms-modal').style.display = 'none';
+}
+
+async function createVMs() {
+    const count = parseInt(document.getElementById('vm-count-input').value);
+    
+    if (!count || count < 1) {
+        showAlert('Please enter a valid number of VMs', 'error');
+        return;
+    }
+    
+    if (!currentTemplateInfo) {
+        showAlert('No template configured for this class', 'error');
+        return;
+    }
+    
+    try {
+        closeAddVMsModal();
+        showAlert(`Creating ${count} VMs... This may take a few minutes.`, 'info');
+        
+        // Show progress bar
+        showDeploymentProgress();
+        
+        const resp = await fetch(`/api/classes/${classId}/vms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                count: count,
+                template_vmid: currentTemplateInfo.proxmox_vmid
+            })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(`Successfully created ${data.vms.length} VMs`, 'success');
+            hideDeploymentProgress();
+            // Refresh the VMs section
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            showAlert('Failed to create VMs: ' + data.error, 'error');
+            hideDeploymentProgress();
+        }
+    } catch (e) {
+        console.error('Failed to create VMs:', e);
+        showAlert('Failed to create VMs', 'error');
+        hideDeploymentProgress();
+    }
+}
+
+let deploymentPollInterval = null;
+
+function showDeploymentProgress() {
+    document.getElementById('deployment-progress').style.display = 'block';
+    document.getElementById('deployment-status').textContent = 'Starting deployment...';
+    document.getElementById('deployment-percentage').textContent = '0%';
+    document.getElementById('deployment-progress-bar').style.width = '0%';
+    
+    // Poll for progress every 2 seconds
+    deploymentPollInterval = setInterval(checkDeploymentProgress, 2000);
+}
+
+function hideDeploymentProgress() {
+    document.getElementById('deployment-progress').style.display = 'none';
+    if (deploymentPollInterval) {
+        clearInterval(deploymentPollInterval);
+        deploymentPollInterval = null;
+    }
+}
+
+async function checkDeploymentProgress() {
+    try {
+        const resp = await fetch(`/api/classes/${classId}/vms`);
+        const data = await resp.json();
+        
+        if (!data.ok) return;
+        
+        const vms = data.vms || [];
+        const total = vms.length;
+        
+        if (total === 0) {
+            document.getElementById('deployment-status').textContent = 'Waiting for VMs to appear...';
+            return;
+        }
+        
+        // Count VMs by status
+        const running = vms.filter(v => v.status === 'running').length;
+        const stopped = vms.filter(v => v.status === 'stopped').length;
+        const withMac = vms.filter(v => v.mac && v.mac !== 'N/A').length;
+        
+        // Calculate progress (VM exists + has MAC = fully created)
+        const progress = Math.round((withMac / total) * 100);
+        
+        document.getElementById('deployment-percentage').textContent = `${progress}%`;
+        document.getElementById('deployment-progress-bar').style.width = `${progress}%`;
+        document.getElementById('deployment-status').textContent = `Creating VMs: ${withMac} of ${total} ready`;
+        document.getElementById('deployment-details').textContent = 
+            `Running: ${running} • Stopped: ${stopped} • Total: ${total}`;
+        
+        // If all VMs are ready, hide progress bar after 2 seconds
+        if (progress >= 100) {
+            document.getElementById('deployment-status').textContent = 'Deployment complete!';
+            setTimeout(() => {
+                hideDeploymentProgress();
+                refreshAllVMs();
+            }, 2000);
+        }
+    } catch (e) {
+        console.error('Failed to check deployment progress:', e);
+    }
+}
+
+// Load template info on page load (for teachers/admins)
+{% if can_manage %}
+document.addEventListener('DOMContentLoaded', () => {
+    loadTemplateInfo();
+    loadStudentsList();
+    refreshAllVMs(); // Load VM status, MAC, and IP addresses
+    
+    // Immediately check teacher VM status on page load
+    checkTeacherVMStatus();
+    
+    // Poll VM status every 30 seconds to keep student VM status in sync
+    setInterval(() => {
+        refreshAllVMs();
+    }, 30000); // 30 seconds
+});
+
+// Check teacher VM status immediately when page loads
+async function checkTeacherVMStatus() {
+    try {
+        const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+        if (!resp.ok) return;
+        
+        const data = await resp.json();
+        if (data.ok && data.template) {
+            currentTemplateInfo = data.template;
+            updateTemplateDisplay();
+            console.log('✅ Initial teacher VM status loaded:', data.template.status);
+        }
+    } catch (e) {
+        console.warn('Failed to load initial teacher VM status:', e);
+    }
+}
+
+// Co-Owners Management
+let availableTeachers = [];
+
+async function loadCoOwners() {
+    try {
+        const resp = await fetch(`/api/classes/{{ class_.id }}/co-owners`);
+        const data = await resp.json();
+        
+        if (data.ok) {
+            const list = document.getElementById('co-owners-list');
+            
+            if (!data.co_owners || data.co_owners.length === 0) {
+                list.innerHTML = `
+                    <p style="text-align: center; color: #666; padding: 2rem;">
+                        No co-owners added yet. Click "Add Co-Owner" to grant others access to manage this class.
+                    </p>
+                `;
+            } else {
+                list.innerHTML = data.co_owners.map(co => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 0.5rem;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <i class="ti ti-user-circle" style="font-size: 1.5rem; color: #0078d4;"></i>
+                            <div>
+                                <div style="font-weight: 600;">${co.username}</div>
+                                <div style="color: #666; font-size: 0.9rem;">${co.role}</div>
+                            </div>
+                        </div>
+                        <button onclick="removeCoOwner(${co.id}, '${co.username}')" class="btn-secondary" style="background: #dc3545; color: white;">
+                            <i class="ti ti-trash"></i> Remove
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load co-owners:', e);
+        document.getElementById('co-owners-list').innerHTML = `
+            <p style="text-align: center; color: #dc3545; padding: 2rem;">
+                Failed to load co-owners
+            </p>
+        `;
+    }
+}
+
+async function loadAvailableTeachers() {
+    try {
+        const resp = await fetch('/api/users/teachers');
+        const data = await resp.json();
+        if (data.ok) {
+            availableTeachers = data.teachers || [];
+        }
+    } catch (e) {
+        console.error('Failed to load teachers:', e);
+    }
+}
+
+function showAddCoOwnerModal() {
+    // Create modal if not exists
+    if (!document.getElementById('add-co-owner-modal')) {
+        const modalHTML = `
+            <div id="add-co-owner-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Add Co-Owner</h3>
+                        <button class="modal-close" onclick="closeAddCoOwnerModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Select Teacher/Admin</label>
+                            <select id="co-owner-select" class="form-control">
+                                <option value="">-- Select a user --</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn-secondary" onclick="closeAddCoOwnerModal()">Cancel</button>
+                            <button class="btn-primary" onclick="addCoOwner()">
+                                <i class="ti ti-user-plus"></i> Add Co-Owner
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+    
+    // Populate dropdown
+    const select = document.getElementById('co-owner-select');
+    select.innerHTML = '<option value="">-- Select a user --</option>' +
+        availableTeachers.map(t => `<option value="${t.id}">${t.username} (${t.role})</option>`).join('');
+    
+    document.getElementById('add-co-owner-modal').style.display = 'flex';
+}
+
+function closeAddCoOwnerModal() {
+    document.getElementById('add-co-owner-modal').style.display = 'none';
+}
+
+async function addCoOwner() {
+    const userId = document.getElementById('co-owner-select').value;
+    
+    if (!userId) {
+        showAlert('Please select a user', 'error');
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/classes/{{ class_.id }}/co-owners`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: parseInt(userId)})
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(data.message, 'success');
+            closeAddCoOwnerModal();
+            loadCoOwners();
+        } else {
+            showAlert('Error: ' + data.error, 'error');
+        }
+    } catch (e) {
+        console.error('Failed to add co-owner:', e);
+        showAlert('Failed to add co-owner', 'error');
+    }
+}
+
+async function removeCoOwner(userId, username) {
+    if (!confirm(`Remove ${username} as co-owner?`)) {
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/classes/{{ class_.id }}/co-owners/${userId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showAlert(data.message, 'success');
+            loadCoOwners();
+        } else {
+            showAlert('Error: ' + data.error, 'error');
+        }
+    } catch (e) {
+        console.error('Failed to remove co-owner:', e);
+        showAlert('Failed to remove co-owner', 'error');
+    }
+}
+
+// Load co-owners when owners section is shown
+const originalShowSection = showSection;
+showSection = function(section) {
+    originalShowSection(section);
+    if (section === 'owners') {
+        loadCoOwners();
+        loadAvailableTeachers();
+    } else if (section === 'settings') {
+        loadSettings();
+    }
+};
+
+// Settings Management
+async function loadSettings() {
+    try {
+        const resp = await fetch(`/api/classes/{{ class_.id }}/settings`);
+        const data = await resp.json();
+        
+        if (data.ok) {
+            // Auto-shutdown settings
+            document.getElementById('auto-shutdown-enabled').checked = data.settings.auto_shutdown_enabled || false;
+            document.getElementById('cpu-threshold').value = data.settings.auto_shutdown_cpu_threshold || 20;
+            document.getElementById('cpu-threshold-value').textContent = data.settings.auto_shutdown_cpu_threshold || 20;
+            document.getElementById('idle-minutes').value = data.settings.auto_shutdown_idle_minutes || 30;
+            
+            // Hour restriction settings
+            const restrictHours = data.settings.restrict_hours || false;
+            document.getElementById('restrict-hours').checked = restrictHours;
+            
+            // Convert hours to time format (HH:MM)
+            const startHour = data.settings.hours_start || 0;
+            const endHour = data.settings.hours_end || 23;
+            document.getElementById('hours-start').value = `${String(startHour).padStart(2, '0')}:00`;
+            document.getElementById('hours-end').value = `${String(endHour).padStart(2, '0')}:00`;
+            
+            document.getElementById('max-usage-hours').value = data.settings.max_usage_hours || 0;
+            
+            // VM hardware specs
+            document.getElementById('vm-cpu-cores').value = data.settings.cpu_cores || 2;
+            document.getElementById('vm-memory-mb').value = data.settings.memory_mb || 4096;
+            
+            // Update time restriction UI state
+            toggleTimeRestrictions();
+        }
+    } catch (e) {
+        console.error('Failed to load settings:', e);
+        showSettingsStatus('Failed to load settings', 'error');
+    }
+}
+
+// Unified save function for all settings
+async function saveAllSettings() {
+    // Gather all settings
+    const autoShutdownEnabled = document.getElementById('auto-shutdown-enabled').checked;
+    const cpuThreshold = parseInt(document.getElementById('cpu-threshold').value);
+    const idleMinutes = parseInt(document.getElementById('idle-minutes').value);
+    
+    const restrictHours = document.getElementById('restrict-hours').checked;
+    const hoursStart = document.getElementById('hours-start').value;
+    const hoursEnd = document.getElementById('hours-end').value;
+    const maxUsageHours = parseInt(document.getElementById('max-usage-hours').value);
+    
+    const vmCpuCores = parseInt(document.getElementById('vm-cpu-cores').value);
+    const vmMemoryMb = parseInt(document.getElementById('vm-memory-mb').value);
+    
+    // Parse time strings to hours (HH:MM -> HH)
+    const startHour = parseInt(hoursStart.split(':')[0]);
+    const endHour = parseInt(hoursEnd.split(':')[0]);
+    
+    // Validation
+    if (cpuThreshold < 5 || cpuThreshold > 50) {
+        showSettingsStatus('CPU threshold must be between 5% and 50%', 'error');
+        return;
+    }
+    
+    if (idleMinutes < 5 || idleMinutes > 240) {
+        showSettingsStatus('Idle duration must be between 5 and 240 minutes', 'error');
+        return;
+    }
+    
+    if (restrictHours && startHour === endHour) {
+        showSettingsStatus('Start and end times cannot be the same', 'error');
+        return;
+    }
+    
+    if (maxUsageHours < 0 || maxUsageHours > 500) {
+        showSettingsStatus('Maximum usage time must be between 0 and 500 hours', 'error');
+        return;
+    }
+    
+    if (vmCpuCores < 1 || vmCpuCores > 32) {
+        showSettingsStatus('CPU cores must be between 1 and 32', 'error');
+        return;
+    }
+    
+    if (vmMemoryMb < 512 || vmMemoryMb > 131072) {
+        showSettingsStatus('Memory must be between 512MB and 128GB', 'error');
+        return;
+    }
+    
+    // Get current specs to check if they changed
+    const currentCpu = {{ class_.cpu_cores or 2 }};
+    const currentMemory = {{ class_.memory_mb or 4096 }};
+    const specsChanged = (vmCpuCores !== currentCpu || vmMemoryMb !== currentMemory);
+    
+    // Warn user if specs are changing
+    if (specsChanged) {
+        const confirmed = confirm(
+            'WARNING: Changing VM specifications will recreate ALL student VMs!\n\n' +
+            `Current specs: ${currentCpu} cores, ${currentMemory}MB RAM\n` +
+            `New specs: ${vmCpuCores} cores, ${vmMemoryMb}MB RAM\n\n` +
+            'This will:\n' +
+            '• Stop and delete all student VMs\n' +
+            '• Create new VMs with updated specs\n' +
+            '• Students will lose unsaved work\n\n' +
+            'Are you sure you want to continue?'
+        );
+        
+        if (!confirmed) {
+            return;
+        }
+    }
+    
+    try {
+        const resp = await fetch(`/api/classes/{{ class_.id }}/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                auto_shutdown_enabled: autoShutdownEnabled,
+                auto_shutdown_cpu_threshold: cpuThreshold,
+                auto_shutdown_idle_minutes: idleMinutes,
+                restrict_hours: restrictHours,
+                hours_start: startHour,
+                hours_end: endHour,
+                max_usage_hours: maxUsageHours,
+                cpu_cores: vmCpuCores,
+                memory_mb: vmMemoryMb
+            })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            showSettingsStatus(data.message, 'success');
+            
+            // If VMs are being recreated, show additional info
+            if (data.recreating_vms) {
+                setTimeout(() => {
+                    showSettingsStatus(
+                        'Student VMs are being recreated in the background. This may take a few minutes. ' +
+                        'Refresh the VM list to see the updated VMs.',
+                        'info'
+                    );
+                }, 5500);
+            }
+        } else {
+            showSettingsStatus(data.error || 'Failed to save settings', 'error');
+        }
+    } catch (e) {
+        console.error('Failed to save settings:', e);
+        showSettingsStatus('Failed to save settings', 'error');
+    }
+}
+
+// Show settings status message
+function showSettingsStatus(message, type) {
+    const statusDiv = document.getElementById('settings-status');
+    statusDiv.textContent = message;
+    statusDiv.style.display = 'block';
+    
+    if (type === 'success') {
+        statusDiv.style.background = '#d1fae5';
+        statusDiv.style.border = '1px solid #6ee7b7';
+        statusDiv.style.color = '#065f46';
+    } else if (type === 'info') {
+        statusDiv.style.background = '#dbeafe';
+        statusDiv.style.border = '1px solid #93c5fd';
+        statusDiv.style.color = '#1e40af';
+    } else {
+        statusDiv.style.background = '#fee2e2';
+        statusDiv.style.border = '1px solid #fca5a5';
+        statusDiv.style.color = '#991b1b';
+    }
+    
+    // Auto-hide after 5 seconds (unless it's an info message about background recreation)
+    if (type !== 'info') {
+        setTimeout(() => {
+            statusDiv.style.display = 'none';
+        }, 5000);
+    }
+}
+
+{% if is_student %}
+// Student session progress monitoring
+let studentProgressInterval = null;
+
+async function loadStudentSessionProgress() {
+    try {
+        const vmid = {{ vm_assignments[0].proxmox_vmid if vm_assignments and vm_assignments|length > 0 else 'null' }};
+        if (!vmid) return;
+        
+        const resp = await fetch(`/api/classes/{{ class_.id }}/vm/${vmid}/session-progress`);
+        const data = await resp.json();
+        
+        if (data.ok) {
+            updateStudentProgressUI(data);
+        }
+    } catch (e) {
+        console.error('Failed to load session progress:', e);
+    }
+}
+
+function updateStudentProgressUI(data) {
+    const progressDiv = document.getElementById('student-session-progress');
+    const timeSpan = document.getElementById('student-session-time');
+    const bar = document.getElementById('student-session-bar');
+    const warningDiv = document.getElementById('student-session-warning');
+    const warningText = document.getElementById('student-session-warning-text');
+    const hoursInfo = document.getElementById('student-hours-info');
+    
+    // Only show if there are restrictions
+    if (!data.has_restrictions) {
+        progressDiv.style.display = 'none';
+        return;
+    }
+    
+    progressDiv.style.display = 'block';
+    
+    // Update time display
+    if (data.status === 'running' && data.uptime_minutes > 0) {
+        const current = formatMinutes(data.uptime_minutes);
+        const max = data.max_session_minutes > 0 ? formatMinutes(data.max_session_minutes) : '∞';
+        timeSpan.textContent = `${current} / ${max}`;
+        
+        // Update progress bar
+        if (data.max_session_minutes > 0) {
+            const percent = Math.min((data.uptime_minutes / data.max_session_minutes) * 100, 100);
+            bar.style.width = percent + '%';
+            
+            // Show warning if > 80%
+            if (percent > 80) {
+                warningDiv.style.display = 'block';
+                const remaining = data.max_session_minutes - data.uptime_minutes;
+                warningText.textContent = `Your session will end in ${Math.max(0, Math.ceil(remaining))} minutes`;
+            } else {
+                warningDiv.style.display = 'none';
+            }
+        } else {
+            bar.style.width = '0%';
+            warningDiv.style.display = 'none';
+        }
+    } else {
+        timeSpan.textContent = 'VM is stopped';
+        bar.style.width = '0%';
+        warningDiv.style.display = 'none';
+    }
+    
+    // Update hours info
+    if (data.restrict_hours) {
+        const start = formatHour(data.hours_start);
+        const end = formatHour(data.hours_end);
+        
+        if (data.within_hours) {
+            hoursInfo.innerHTML = `<i class="ti ti-clock"></i> Available hours: ${start} - ${end} (currently allowed)`;
+            hoursInfo.style.background = '#e6f4ff';
+            hoursInfo.style.borderLeft = '3px solid #0078d4';
+        } else {
+            hoursInfo.innerHTML = `<i class="ti ti-clock"></i> VMs can only run ${start} - ${end} (outside hours now)`;
+            hoursInfo.style.background = '#fff3cd';
+            hoursInfo.style.borderLeft = '3px solid #ffc107';
+        }
+    } else if (data.max_session_minutes > 0) {
+        hoursInfo.innerHTML = `<i class="ti ti-hourglass"></i> Maximum session: ${formatMinutes(data.max_session_minutes)}`;
+    } else {
+        hoursInfo.style.display = 'none';
+    }
+}
+
+function formatMinutes(minutes) {
+    const h = Math.floor(minutes / 60);
+    const m = Math.floor(minutes % 60);
+    if (h > 0) {
+        return `${h}h ${m}m`;
+    }
+    return `${m}m`;
+}
+
+function formatHour(hour) {
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const display = hour === 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    return `${display}:00 ${suffix}`;
+}
+
+// Start monitoring when section is shown
+const originalShowSection2 = showSection;
+showSection = function(section) {
+    if (typeof originalShowSection2 === 'function') {
+        originalShowSection2(section);
+    }
+    
+    if (section === 'my-vm') {
+        loadStudentSessionProgress();
+        if (studentProgressInterval) clearInterval(studentProgressInterval);
+        studentProgressInterval = setInterval(loadStudentSessionProgress, 30000); // Update every 30s
+    } else {
+        if (studentProgressInterval) {
+            clearInterval(studentProgressInterval);
+            studentProgressInterval = null;
+        }
+    }
+};
+
+// Initial load
+loadStudentSessionProgress();
+studentProgressInterval = setInterval(loadStudentSessionProgress, 30000);
+{% endif %}
+
+{% endif %}
+</script>
+
+<!-- Assign VM Modal -->
+<div id="assign-vm-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Assign VM to Student</h3>
+            <button class="modal-close" onclick="closeAssignVMModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom: 1rem;">
+                Assigning VM for: <strong id="assign-student-name"></strong>
+            </p>
+            <div class="form-group">
+                <label>Select VM</label>
+                <select id="assign-vm-select" class="form-control">
+                    <option value="">-- Select VM --</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button class="btn-secondary" onclick="closeAssignVMModal()">Cancel</button>
+                <button class="btn-primary" onclick="confirmAssignVM()">
+                    <i class="ti ti-circle-check"></i> Assign VM
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load Balance Modal -->
+<div id="load-balance-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+            <h3><i class="ti ti-load-balancer"></i> Load Balance VMs</h3>
+            <button class="modal-close" onclick="closeLoadBalanceModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="overflow-y: auto; flex: 1;">
+            <p style="margin-bottom: 1.5rem; color: #666;">
+                Analyzes resource usage across cluster nodes and migrates <strong>stopped VMs only</strong> to balance RAM (70%) and CPU (30%) usage.
+                Running VMs are never migrated to avoid disrupting students.
+            </p>
+            
+            <div id="load-balance-analysis" style="display: none; margin-bottom: 1.5rem;">
+                <h4 style="margin-bottom: 1rem; font-size: 1rem;">Current Node Status</h4>
+                <div id="node-stats-container" style="margin-bottom: 1rem;"></div>
+                <div id="migration-plan-container"></div>
+            </div>
+            
+            <div id="load-balance-progress" style="display: none; margin-bottom: 1rem;">
+                <div class="spinner" style="margin: 0 auto 1rem;"></div>
+                <p id="load-balance-status-text" style="text-align: center;">Analyzing cluster...</p>
+            </div>
+            
+            <div id="load-balance-results" style="display: none;"></div>
+            
+            <div class="form-actions">
+                <button class="btn-secondary" onclick="closeLoadBalanceModal()">Cancel</button>
+                <button id="btn-preview-balance" class="btn-secondary" onclick="previewLoadBalance()" style="display: none;">
+                    <i class="ti ti-eye"></i> Preview Plan
+                </button>
+                <button id="btn-execute-balance" class="btn-primary" onclick="executeLoadBalance()" style="display: none;">
+                    <i class="ti ti-load-balancer"></i> Execute Load Balance
+                </button>
+                <button id="btn-force-balance" class="btn-primary" onclick="executeLoadBalance(true)" style="display: none;">
+                    <i class="ti ti-load-balancer"></i> Force Balance
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load Balance Functions
+function showLoadBalanceModal() {
+    const modal = document.getElementById('load-balance-modal');
+    modal.style.display = 'flex';
+    
+    // Reset modal state
+    document.getElementById('load-balance-analysis').style.display = 'none';
+    document.getElementById('load-balance-progress').style.display = 'block';
+    document.getElementById('load-balance-results').style.display = 'none';
+    document.getElementById('btn-preview-balance').style.display = 'inline-block';
+    document.getElementById('btn-execute-balance').style.display = 'none';
+    document.getElementById('btn-force-balance').style.display = 'none';
+    
+    // Auto-preview on open
+    previewLoadBalance();
+}
+
+function closeLoadBalanceModal() {
+    document.getElementById('load-balance-modal').style.display = 'none';
+}
+
+async function previewLoadBalance() {
+    document.getElementById('load-balance-progress').style.display = 'block';
+    document.getElementById('load-balance-analysis').style.display = 'none';
+    document.getElementById('load-balance-results').style.display = 'none';
+    document.getElementById('load-balance-status-text').textContent = 'Analyzing cluster resources...';
+    
+    try {
+        const response = await fetch(`/api/classes/{{ class_.id }}/load-balance?dry_run=true`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        document.getElementById('load-balance-progress').style.display = 'none';
+        
+        if (data.ok) {
+            displayLoadBalanceAnalysis(data);
+        } else {
+            showAlert(data.error || 'Failed to analyze load balance', 'error');
+            closeLoadBalanceModal();
+        }
+    } catch (error) {
+        console.error('Load balance preview error:', error);
+        document.getElementById('load-balance-progress').style.display = 'none';
+        showAlert('Failed to analyze load balance', 'error');
+        closeLoadBalanceModal();
+    }
+}
+
+function displayLoadBalanceAnalysis(data) {
+    document.getElementById('load-balance-analysis').style.display = 'block';
+    
+    // Display node stats
+    const nodeStatsHtml = Object.entries(data.node_stats || {}).map(([nodeName, stats]) => `
+        <div style="background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <strong>${nodeName}</strong>
+                <span style="font-weight: 600; color: ${stats.score > data.avg_score ? '#28a745' : '#dc3545'};">
+                    Score: ${stats.score.toFixed(3)}
+                </span>
+            </div>
+            <div style="display: flex; gap: 1rem; font-size: 0.9rem; color: #666;">
+                <span>RAM: ${(stats.mem_free_pct * 100).toFixed(1)}% free</span>
+                <span>CPU: ${(stats.cpu_free_pct * 100).toFixed(1)}% free</span>
+                <span>Class VMs: ${stats.class_vm_count} / ${stats.vm_count}</span>
+            </div>
+        </div>
+    `).join('');
+    
+    document.getElementById('node-stats-container').innerHTML = nodeStatsHtml;
+    
+    // Display migration plan
+    const migrations = data.migrations || [];
+    let migrationHtml = '';
+    
+    if (migrations.length === 0) {
+        migrationHtml = `
+            <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 1rem; border-radius: 6px;">
+                <i class="ti ti-circle-check"></i> <strong>Nodes are already well-balanced!</strong><br>
+                <span style="font-size: 0.9rem;">No migrations needed. Variance: ${data.score_variance.toFixed(6)}</span>
+            </div>
+        `;
+        document.getElementById('btn-execute-balance').style.display = 'none';
+        document.getElementById('btn-force-balance').style.display = 'inline-block';
+    } else {
+        migrationHtml = `
+            <h4 style="margin-bottom: 1rem; font-size: 1rem;">Proposed Migrations (${migrations.length})</h4>
+            <div style="max-height: 300px; overflow-y: auto;">
+                ${migrations.map(m => `
+                    <div style="background: #e7f3ff; 
+                                border: 1px solid #90c9f9; 
+                                padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div style="font-weight: 600;">
+                                ${m.name} (VMID: ${m.vmid})
+                            </div>
+                            <span style="font-size: 0.85rem; padding: 2px 8px; border-radius: 12px; 
+                                       background: #6c757d; 
+                                       color: white;">
+                                stopped
+                            </span>
+                        </div>
+                        <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.25rem;">
+                            <i class="ti ti-arrow-right"></i> ${m.from_node} → ${m.to_node}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #666; margin-bottom: 0.25rem;">
+                            Resources: ${m.maxmem_gb.toFixed(2)} GB RAM, ${m.maxcpu} CPU cores
+                        </div>
+                        <div style="font-size: 0.85rem; color: #0056b3;">
+                            ${m.reason}
+                        </div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 0.25rem; font-style: italic;">⚡ Offline migration (faster, no disruption)</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        document.getElementById('btn-execute-balance').style.display = 'inline-block';
+        document.getElementById('btn-force-balance').style.display = 'none';
+    }
+    
+    document.getElementById('migration-plan-container').innerHTML = migrationHtml;
+}
+
+async function executeLoadBalance(force = false) {
+    // Hide buttons during execution
+    document.getElementById('btn-execute-balance').style.display = 'none';
+    document.getElementById('btn-force-balance').style.display = 'none';
+    document.getElementById('load-balance-analysis').style.display = 'none';
+    document.getElementById('load-balance-progress').style.display = 'block';
+    document.getElementById('load-balance-status-text').textContent = 'Executing load balance...';
+    
+    try {
+        const url = `/api/classes/{{ class_.id }}/load-balance${force ? '?force=true' : ''}`;
+        const response = await fetch(url, { method: 'POST' });
+        const data = await response.json();
+        
+        document.getElementById('load-balance-progress').style.display = 'none';
+        document.getElementById('load-balance-results').style.display = 'block';
+        
+        if (data.ok) {
+            const successCount = data.successful_migrations?.length || 0;
+            const failedCount = data.failed_migrations?.length || 0;
+            
+            let resultsHtml = `
+                <div style="background: ${successCount > 0 ? '#d4edda' : '#d1ecf1'}; 
+                            border: 1px solid ${successCount > 0 ? '#c3e6cb' : '#bee5eb'}; 
+                            color: ${successCount > 0 ? '#155724' : '#0c5460'}; 
+                            padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+                    <strong>${data.message}</strong>
+                </div>
+            `;
+            
+            if (successCount > 0) {
+                resultsHtml += `
+                    <h4 style="margin-bottom: 0.5rem; font-size: 1rem; color: #28a745;">
+                        <i class="ti ti-circle-check"></i> Successful Migrations (${successCount})
+                    </h4>
+                    <div style="max-height: 200px; overflow-y: auto; margin-bottom: 1rem;">
+                        ${data.successful_migrations.map(m => `
+                            <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.25rem; font-size: 0.9rem;">
+                                ${m.name} (${m.vmid}): ${m.from_node} → ${m.to_node}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            if (failedCount > 0) {
+                resultsHtml += `
+                    <h4 style="margin-bottom: 0.5rem; font-size: 1rem; color: #dc3545;">
+                        <i class="ti ti-circle-x"></i> Failed Migrations (${failedCount})
+                    </h4>
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${data.failed_migrations.map(m => `
+                            <div style="background: #f8d7da; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.25rem; font-size: 0.9rem;">
+                                ${m.name} (${m.vmid}): ${m.error}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            document.getElementById('load-balance-results').innerHTML = resultsHtml;
+            
+            // Refresh VM list after successful migrations
+            if (successCount > 0) {
+                setTimeout(() => {
+                    refreshVMs();
+                }, 2000);
+            }
+        } else {
+            document.getElementById('load-balance-results').innerHTML = `
+                <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 6px;">
+                    <strong>Error:</strong> ${data.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Load balance execution error:', error);
+        document.getElementById('load-balance-progress').style.display = 'none';
+        document.getElementById('load-balance-results').style.display = 'block';
+        document.getElementById('load-balance-results').innerHTML = `
+            <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 6px;">
+                <strong>Error:</strong> Failed to execute load balance
+            </div>
+        `;
+    }
+}
+
+// Close modal when clicking outside
+window.addEventListener('click', function(event) {
+    const modal = document.getElementById('load-balance-modal');
+    if (event.target === modal) {
+        closeLoadBalanceModal();
+    }
+});
+</script>
+
+</body>
+</html>
+

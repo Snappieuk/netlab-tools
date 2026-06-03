@@ -1,0 +1,511 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1><i class="ti ti-school"></i> Classes</h1>
+        <p class="page-subtitle">
+            {% if user_role == 'teacher' or user_role == 'adminer' %}
+                Manage your lab classes and student VMs
+            {% else %}
+                Access your enrolled classes and virtual machines
+            {% endif %}
+        </p>
+    </div>
+    {% if user_role == 'teacher' or user_role == 'adminer' %}
+    <div>
+        <button type="button" class="btn-secondary" onclick="openImportModal()" style="margin-right: 0.5rem;">
+            <i class="ti ti-download"></i> Import Existing
+        </button>
+        <a href="{{ url_for('classes.create_class') }}" class="btn-primary">
+            <i class="ti ti-circle-plus"></i> Create Class
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+{% if message %}
+<div class="page-banner page-banner-warning">{{ message }}</div>
+{% endif %}
+
+<!-- Classes Grid -->
+<div class="classes-grid" id="classes-container">
+    {% if classes %}
+        {% for class in classes %}
+        <div class="class-card">
+            <div class="class-card-content" onclick="window.location.href='{{ url_for('classes.view_class', class_id=class.id) }}'">
+                <div class="class-card-header">
+                    <h3 class="class-card-title">{{ class.name }}</h3>
+                    {% if class.teacher_name %}
+                    <span class="class-card-teacher">
+                        <i class="ti ti-user"></i> {{ class.teacher_name }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="class-card-body">
+                    {% if class.description %}
+                    <p class="class-card-description">{{ class.description }}</p>
+                    {% endif %}
+                    <div class="class-card-stats">
+                        <div class="class-stat">
+                            <span class="class-stat-value">{{ class.enrolled_count or 0 }}</span>
+                            <span class="class-stat-label">Students</span>
+                        </div>
+                        <div class="class-stat">
+                            <span class="class-stat-value">{{ class.assigned_count }}</span>
+                            <span class="class-stat-label">VMs Assigned</span>
+                        </div>
+                        <div class="class-stat">
+                            <span class="class-stat-value">{{ class.unassigned_count }}</span>
+                            <span class="class-stat-label">VMs Available</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="class-card-footer">
+                    {% if user_role == 'teacher' and class.teacher_id != user.id %}
+                        {% set is_co_owner = namespace(value=False) %}
+                        {% for co in class.co_owners %}
+                            {% if co.id == user.id %}
+                                {% set is_co_owner.value = True %}
+                            {% endif %}
+                        {% endfor %}
+                        {% if is_co_owner.value %}
+                        <span class="badge badge-co-owner">
+                            <i class="ti ti-users"></i> Co-Owner
+                        </span>
+                        {% else %}
+                        <span class="badge badge-enrolled">
+                            <i class="ti ti-user-check"></i> Enrolled
+                        </span>
+                        {% endif %}
+                    {% endif %}
+                    {% if class.token_valid %}
+                    <span class="badge badge-success">
+                        <i class="ti ti-link"></i> Invite Active
+                    </span>
+                    {% else %}
+                    <span class="badge badge-secondary">
+                        <i class="ti ti-link"></i> No Invite
+                    </span>
+                    {% endif %}
+                    {% if class.template_name %}
+                    <span class="badge badge-info">
+                        <i class="ti ti-box"></i> {{ class.template_name }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if (user_role == 'teacher' and class.teacher_id == user.id) or user_role == 'adminer' %}
+            <div class="class-card-actions">
+                {% if class.token_valid %}
+                <button class="action-btn success" onclick="event.stopPropagation(); toggleInvite({{ class.id }}, false)" title="Disable invite link">
+                    <i class="ti ti-link-off"></i> Disable Invite
+                </button>
+                {% else %}
+                <button class="action-btn primary" onclick="event.stopPropagation(); toggleInvite({{ class.id }}, true)" title="Enable invite link">
+                    <i class="ti ti-link"></i> Enable Invite
+                </button>
+                {% endif %}
+                <button class="action-btn danger" onclick="event.stopPropagation(); deleteClass({{ class.id }}, '{{ class.name }}')">
+                    <i class="ti ti-trash"></i> Delete
+                </button>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-state">
+            <i class="ti ti-school" style="font-size: 48px; color: #8a8886;"></i>
+            <h3>No Classes Found</h3>
+            {% if user_role == 'teacher' or user_role == 'adminer' %}
+                <p>Create your first class to get started using the button above!</p>
+            {% else %}
+                <p>You haven't joined any classes yet. Ask your teacher for an invite link.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<style>
+.classes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.class-card {
+    background: white;
+    border: 1px solid #e1dfdd;
+    border-radius: 8px;
+    padding: 0;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.class-card:hover {
+    border-color: #0078d4;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.class-card-content {
+    padding: 1.5rem;
+    cursor: pointer;
+}
+
+.class-card-actions {
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid #e1dfdd;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.action-btn {
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid #d1d1d1;
+    background: white;
+    color: #605e5c;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.15s;
+}
+
+.action-btn:hover {
+    background: #f3f2f1;
+    border-color: #8a8886;
+}
+
+.action-btn.danger {
+    color: #a4262c;
+}
+
+.action-btn.danger:hover {
+    background: #fde7e9;
+    border-color: #a4262c;
+}
+
+.class-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.class-card-title {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #323130;
+}
+
+.class-card-teacher {
+    font-size: 0.85rem;
+    color: #605e5c;
+}
+
+.class-card-description {
+    color: #605e5c;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.class-card-stats {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.class-stat {
+    text-align: center;
+}
+
+.class-stat-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #0078d4;
+}
+
+.class-stat-label {
+    font-size: 0.75rem;
+    color: #8a8886;
+    text-transform: uppercase;
+}
+
+.class-card-footer {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 4rem 2rem;
+    background: #faf9f8;
+    border-radius: 8px;
+}
+
+.empty-state h3 {
+    margin: 1rem 0 0.5rem;
+    color: #323130;
+}
+
+.empty-state p {
+    color: #605e5c;
+    margin-bottom: 1.5rem;
+}
+
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #0078d4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.btn-primary:hover {
+    background: #106ebe;
+}
+
+.badge-info {
+    background: #e8f4fd;
+    color: #0078d4;
+}
+
+.badge-enrolled {
+    background: #fff4ce;
+    color: #8a5c00;
+    border: 1px solid #f5e5a4;
+}
+
+.badge-co-owner {
+    background: #f3e5f5;
+    color: #6a1b9a;
+    border: 1px solid #ce93d8;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+}
+
+.role-adminer { background: #ffd4d4; color: #a80000; }
+.role-teacher { background: #d4e5ff; color: #0050a0; }
+.role-user { background: #e0e0e0; color: #505050; }
+</style>
+
+<script>
+async function toggleInvite(classId, enable) {
+    try {
+        const method = enable ? 'POST' : 'DELETE';
+        const resp = await fetch(`/api/classes/${classId}/invite`, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            const msg = enable ? 'Invite link enabled' : 'Invite link disabled';
+            alert(msg);
+            location.reload();
+        } else {
+            alert('Failed to toggle invite: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to toggle invite:', e);
+        alert('Failed to toggle invite. Please try again.');
+    }
+}
+
+async function deleteClass(classId, className) {
+    if (!confirm(`Are you sure you want to delete the class "${className}"?\n\nThis will delete all associated VMs and cannot be undone!`)) {
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/classes/${classId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            alert(data.message || 'Class deleted successfully');
+            location.reload();
+        } else {
+            alert('Failed to delete class: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to delete class:', e);
+        alert('Failed to delete class. Please try again.');
+    }
+}
+
+// Import existing classes modal
+function openImportModal() {
+    document.getElementById('import-modal').style.display = 'flex';
+    scanForClasses();
+}
+
+function closeImportModal() {
+    document.getElementById('import-modal').style.display = 'none';
+}
+
+async function scanForClasses() {
+    const container = document.getElementById('importable-classes');
+    container.innerHTML = '<p style="text-align:center; padding:2rem;"><i class="ti ti-hourglass"></i> Scanning Proxmox for classes...</p>';
+    
+    try {
+        const resp = await fetch('/api/class-import/scan');
+        const data = await resp.json();
+        
+        console.log('Scan results:', data);
+        console.log('Total VMs scanned:', data.total_vms_scanned);
+        console.log('Potential classes found:', data.total_groups);
+        console.log('Sample VMs (VMID: Name):', data.sample_vms);
+        console.log('Unmatched VMs:', data.unmatched_count, data.unmatched_samples);
+        
+        if (!data.ok) {
+            container.innerHTML = `<p style="color: #a4262c; padding: 2rem;">${data.error}</p>`;
+            return;
+        }
+        
+        if (data.potential_classes.length === 0) {
+            let unmatchedHtml = '';
+            if (data.unmatched_samples && data.unmatched_samples.length > 0) {
+                unmatchedHtml = `<br><br><strong>Sample VMs found (not matching pattern):</strong><br>` +
+                    data.unmatched_samples.map(vm => `• VMID <code>${vm.vmid}</code>: ${vm.name}`).join('<br>');
+            }
+            container.innerHTML = `<p style="padding: 2rem; text-align: center;">
+                No importable classes found.<br><br>
+                <strong>Expected VMID pattern (VM names are separate):</strong><br>
+                • Teacher VM: VMID ends in <code>00</code> (e.g., 12300, 45600)<br>
+                • Base VM: VMID ends in <code>99</code> (e.g., 12399, 45699)<br>
+                • Student VMs: VMID ends in <code>01-98</code> (e.g., 12301, 12302, 45601, 45602)<br><br>
+                <em>VMs must have 5-digit VMIDs: {3 random digits}{2-digit identifier}</em><br><br>
+                (Scanned ${data.total_vms_scanned} VMs, ${data.unmatched_count} didn't match pattern)
+                ${unmatchedHtml}
+                <br><br><em>Check browser console (F12) for full VM list</em>
+            </p>`;
+            return;
+        }
+        
+        // Display found classes
+        let html = '';
+        data.potential_classes.forEach(cls => {
+            const studentIds = JSON.stringify(cls.student_vms.map(vm => vm.vmid));
+            html += `
+                <div style="border: 1px solid #e1dfdd; border-radius: 4px; padding: 1rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                        <div>
+                            <h4 style="margin: 0 0 0.5rem 0;">${cls.suggested_name}</h4>
+                            <div style="font-size: 12px; color: #605e5c;">
+                                <strong>Code:</strong> ${cls.prefix} | <strong>Name:</strong> ${cls.classname} | <strong>Students:</strong> ${cls.student_count}
+                                ${cls.teacher_vm ? ' | ✓ Teacher VM' : ''}
+                                ${cls.base_vm ? ' | ✓ Base VM' : ''}
+                            </div>
+                        </div>
+                        <button type="button" class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick='importClass("${cls.prefix}", "${cls.suggested_name}", ${cls.teacher_vm ? cls.teacher_vm.vmid : 'null'}, ${cls.base_vm ? cls.base_vm.vmid : 'null'}, ${studentIds})'>
+                            <i class="ti ti-download"></i> Import
+                        </button>
+                    </div>
+                    <details style="font-size: 12px; margin-top: 0.5rem;">
+                        <summary style="cursor: pointer; color: #0078d4;">View ${cls.student_count + (cls.teacher_vm ? 1 : 0) + (cls.base_vm ? 1 : 0)} VMs</summary>
+                        <div style="margin-top: 0.5rem; padding-left: 1rem;">
+                            ${cls.teacher_vm ? `<div>• <strong>Teacher:</strong> ${cls.teacher_vm.name} (${cls.teacher_vm.vmid})</div>` : ''}
+                            ${cls.base_vm ? `<div>• <strong>Base:</strong> ${cls.base_vm.name} (${cls.base_vm.vmid})</div>` : ''}
+                            <div style="margin-top: 0.25rem;"><strong>Students:</strong></div>
+                            ${cls.student_vms.map(vm => `<div>• ${vm.name} (${vm.vmid})</div>`).join('')}
+                        </div>
+                    </details>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (e) {
+        console.error('Failed to scan:', e);
+        container.innerHTML = `<p style="color: #a4262c; padding: 2rem;">Error: ${e.message}</p>`;
+    }
+}
+
+async function importClass(prefix, suggestedName, teacherVmid, baseVmid, studentVmids) {
+    const className = prompt(`Enter class name for ${prefix}:`, suggestedName);
+    if (!className) return;
+    
+    const payload = {
+        class_name: className,
+        prefix: prefix,
+        teacher_vmid: teacherVmid,
+        base_vmid: baseVmid,
+        student_vmids: studentVmids,
+        cluster_id: null
+    };
+    
+    console.log('Importing class with payload:', payload);
+    
+    try {
+        const resp = await fetch('/api/class-import/import', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        console.log('Import response status:', resp.status);
+        
+        const data = await resp.json();
+        console.log('Import response data:', data);
+        
+        if (data.ok) {
+            alert(data.message);
+            closeImportModal();
+            location.reload();
+        } else {
+            alert('Failed to import class:\n' + (data.error || 'Unknown error'));
+            console.error('Import failed:', data);
+        }
+    } catch (e) {
+        console.error('Import error:', e);
+        alert('Error importing class:\n' + e.message);
+    }
+}
+</script>
+
+<!-- Import Modal -->
+<div id="import-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; border-radius: 8px; max-width: 800px; width: 90%; max-height: 80vh; overflow: auto; padding: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h2 style="margin: 0;"><i class="ti ti-download"></i> Import Existing Classes</h2>
+            <button onclick="closeImportModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+        </div>
+        <p style="color: #605e5c; margin-bottom: 1.5rem;">
+            Scan Proxmox for VMs matching class naming conventions.
+        </p>
+        <div id="importable-classes"></div>
+    </div>
+</div>
+
+{% endblock %}

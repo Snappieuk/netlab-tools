@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Console - {{ vm_name }}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- noVNC stylesheet (self-hosted via inline styles to avoid CORS) -->
+    <style>
+        /* noVNC base styles */
+        html, body { width: 100%; height: 100%; }
+        html { overflow: hidden; }
+        body { overflow: hidden; }
+    </style>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+        
+        #header {
+            background: #2d2d30;
+            color: #fff;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #3e3e42;
+            z-index: 1000;
+            position: relative;
+        }
+        
+        #header h3 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        
+        #status {
+            font-size: 12px;
+            color: #cccccc;
+        }
+        
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background: #28a745;
+        }
+        
+        .status-dot.connecting {
+            background: #ffc107;
+        }
+        
+        .status-dot.disconnected {
+            background: #dc3545;
+        }
+        
+        #console-container {
+            position: absolute;
+            top: 48px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        
+        #screen {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #loading {
+            color: #fff;
+            font-size: 16px;
+            text-align: center;
+        }
+        
+        #loading .spinner {
+            border: 4px solid rgba(255,255,255,0.1);
+            border-left-color: #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        #error {
+            display: none;
+            color: #dc3545;
+            background: #2d2d30;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 500px;
+            margin: 20px;
+        }
+        
+        #error h3 {
+            margin: 0 0 10px;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h3>🖥️ {{ vm_name }} (VMID: {{ vmid }})</h3>
+        <div id="status">
+            <span class="status-dot connecting" id="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </div>
+    
+    <div id="console-container">
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Connecting to VM console...</p>
+        </div>
+        <div id="error">
+            <h3>Connection Failed</h3>
+            <p id="error-message"></p>
+        </div>
+        <div id="screen"></div>
+    </div>
+    
+    <!-- noVNC library (self-hosted, same-origin) -->
+    <script type="module">
+        import RFB from "{{ url_for('static', filename='novnc/core/rfb.js') }}";
+
+        const vmid = {{ vmid }};
+        const proxmoxHost = {{ proxmox_host|tojson }};
+        const proxmoxPort = {{ proxmox_port|tojson }};
+        
+        // Connect through Flask backend WebSocket proxy instead of directly to Proxmox
+        // Flask backend handles all Proxmox authentication using session data
+        // Auto-detect protocol: http→ws, https→wss (browser enforces this for security)
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/vnc/${vmid}`;
+        
+        console.log('=== noVNC Console Debug Info ===');
+        console.log('WebSocket URL:', wsUrl);
+        console.log('Page protocol:', window.location.protocol, '→ WS protocol:', protocol);
+        console.log('VMID:', vmid);
+        console.log('Connecting through Flask WebSocket proxy:', wsUrl);
+        console.log('Backend will authenticate to Proxmox with stored session data');
+        
+        let rfb;
+        let reconnectTimer = null;
+        let ticketExpirationTimer = null;
+        let isReconnecting = false;
+        let lastConnectTime = 0;
+        
+        // Proxmox VNC tickets with generate-password=1 last 7200 seconds (2 hours)
+        // We'll auto-refresh 5 minutes before expiration to prevent interruption
+        const TICKET_LIFETIME_MS = 2 * 60 * 60 * 1000; // 2 hours
+        const REFRESH_BEFORE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes before expiry
+        const MIN_RECONNECT_INTERVAL_MS = 2 * 1000; // Only throttle very rapid reconnects (2 seconds)
+        
+        function scheduleTicketRefresh() {
+            // Clear any existing timer
+            if (ticketExpirationTimer) {
+                clearTimeout(ticketExpirationTimer);
+            }
+            
+            // Schedule refresh 5 minutes before ticket expires
+            const refreshDelay = TICKET_LIFETIME_MS - REFRESH_BEFORE_EXPIRY_MS;
+            console.log(`⏰ Scheduled ticket refresh in ${refreshDelay / 1000 / 60} minutes`);
+            
+            ticketExpirationTimer = setTimeout(() => {
+                console.log('🔄 VNC ticket nearing expiration, refreshing connection...');
+                reconnectVNC();
+            }, refreshDelay);
+        }
+        
+        function cancelScheduledRefresh() {
+            if (ticketExpirationTimer) {
+                clearTimeout(ticketExpirationTimer);
+                ticketExpirationTimer = null;
+            }
+        }
+        
+        async function reconnectVNC() {
+            if (isReconnecting) {
+                console.log('⏸️ Reconnect already in progress, skipping...');
+                return;
+            }
+            
+            // Prevent reconnect spam - wait at least 30 seconds between reconnects
+            const timeSinceLastConnect = Date.now() - lastConnectTime;
+            if (timeSinceLastConnect < MIN_RECONNECT_INTERVAL_MS) {
+                console.log(`⏸️ Too soon to reconnect (${Math.round(timeSinceLastConnect/1000)}s since last connect), ignoring...`);
+                return;
+            }
+            
+            isReconnecting = true;
+            console.log('🔄 Reconnecting VNC (seamless)...');
+            updateStatus('connecting', 'Reconnecting...');
+            
+            // Disconnect existing connection cleanly
+            if (rfb) {
+                try {
+                    rfb.disconnect();
+                } catch (e) {
+                    console.warn('Error disconnecting old RFB:', e);
+                }
+                rfb = null;
+            }
+            
+            // Brief pause to allow cleanup
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Reconnect with fresh ticket
+            initializeVNC();
+            isReconnecting = false;
+        }
+        
+        async function reconnectVNCInPlace() {
+            if (isReconnecting) {
+                console.log('⏸️ Reconnect already in progress, skipping...');
+                return;
+            }
+            
+            const timeSinceLastConnect = Date.now() - lastConnectTime;
+            if (timeSinceLastConnect < MIN_RECONNECT_INTERVAL_MS) {
+                console.log(`⏸️ Reconnect throttled (${Math.round(timeSinceLastConnect/1000)}s since last connect)`);
+                return;
+            }
+            
+            isReconnecting = true;
+            console.log('🔄 VNC ticket expired - reconnecting seamlessly in background...');
+            
+            // Keep showing "Connected" status during reconnect (seamless UX)
+            updateStatus('connecting', 'Refreshing connection...');
+            
+            // Disconnect old connection silently
+            if (rfb) {
+                try {
+                    rfb.disconnect();
+                } catch (e) {
+                    console.warn('Error disconnecting old RFB:', e);
+                }
+                rfb = null;
+            }
+            
+            // Brief pause to allow cleanup
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            try {
+                // Use initializeVNC which handles ticket fetching properly
+                console.log('🔌 Re-initializing VNC connection...');
+                initializeVNC();
+                console.log('✅ Seamless reconnect initiated');
+            } catch (err) {
+                console.error('❌ Reconnect failed:', err);
+                showError('Reconnection failed', 'Please reload the page to reconnect.');
+            }
+            
+            isReconnecting = false;
+        }
+        
+        function updateStatus(state, msg) {
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            
+            statusDot.className = 'status-dot ' + state;
+            statusText.textContent = msg;
+        }
+        
+        function showError(message, details = '') {
+            console.error('Console error:', message, details);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error-message').innerHTML = message + (details ? '<br><br><small>' + details + '</small>' : '');
+            updateStatus('disconnected', 'Connection failed');
+        }
+        
+        function connectedToServer(e) {
+            console.log('✅ ========== Connected to VM console successfully! ==========');
+            console.log('Connection event details:', e);
+            lastConnectTime = Date.now(); // Track connection time
+            updateStatus('', 'Connected');
+            document.getElementById('loading').style.display = 'none';
+            
+            // Schedule automatic refresh before ticket expires
+            scheduleTicketRefresh();
+        }
+        
+        function disconnectedFromServer(e) {
+            console.log('❌ ========== Disconnected from server ==========');
+            console.log('Disconnect event:', e);
+            console.log('Event detail:', e.detail);
+            console.log('Clean disconnect:', e.detail.clean);
+            console.log('Disconnect code:', e.detail.code);
+            console.log('Disconnect reason:', e.detail.reason);
+            console.log('Time since connect:', Date.now() - lastConnectTime, 'ms');
+            
+            // Cancel any scheduled refresh since we're disconnected
+            cancelScheduledRefresh();
+            
+            const reason = e.detail.reason || '';
+            const code = e.detail.code || 0;
+            console.log('📊 Disconnect summary - clean:', e.detail.clean, 'code:', code, 'reason:', reason);
+            
+            // AUTO-RECONNECT IMMEDIATELY for clean disconnects or ticket expiration
+            // Clean disconnect = normal VNC session end (ticket expired)
+            // Code 401/403 = authentication failure (expired ticket)
+            if (e.detail.clean || reason.includes('401') || reason.includes('403')) {
+                console.log('🔄 VNC session ended (ticket expired) - reconnecting in background...');
+                
+                // Seamless in-place reconnect - don't show loading screen
+                setTimeout(() => reconnectVNCInPlace(), 500);
+                return;
+            }
+            
+            // For non-clean disconnects, show error UI
+            updateStatus('disconnected', 'Connection Lost');
+            console.error('❌ Abnormal disconnect - code:', code, 'reason:', reason);
+            
+            let helpText = '';
+            let errorMsg = reason || 'Unknown error';
+            
+            // Code 1006 = connection closed abnormally (usually SSL cert issue)
+            if (code === 1006 || reason.includes('1006')) {
+                errorMsg = 'SSL Certificate not accepted';
+                helpText = '<strong>Certificate Issue Detected</strong><br><br>' +
+                           '1. Open <a href="https://' + proxmoxHost + ':' + proxmoxPort + '" target="_blank" style="color: #4CAF50; font-weight: bold;">https://' + proxmoxHost + ':' + proxmoxPort + '</a> in a new tab<br>' +
+                           '2. Accept the certificate warning (click Advanced → Accept Risk)<br>' +
+                           '3. Close that tab and click the button below:<br><br>' +
+                           '<button onclick="location.reload()" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">✅ Reload Console</button>';
+            } else if (reason.includes('timeout') || reason.includes('ETIMEDOUT')) {
+                helpText = 'Connection timed out. Check that the VM is running and the Proxmox server is reachable.<br><br>' +
+                           '<button onclick="location.reload()" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">🔄 Retry Connection</button>';
+            } else {
+                // Default reconnect button for any unknown error
+                helpText = '<strong>Connection Lost</strong><br><br>' +
+                           'The console connection was interrupted. Click below to reconnect:<br><br>' +
+                           '<button onclick="location.reload()" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">🔄 Reconnect to Console</button>';
+            }
+            
+            showError('Connection failed: ' + errorMsg, helpText);
+        }
+        
+        async function credentialsAreRequired(e) {
+            console.log('🔑 VNC requesting credentials - fetching ticket for authentication');
+            try {
+                const response = await fetch(`/api/console/${vmid}/ticket`);
+                const data = await response.json();
+                if (data.ok && data.ticket) {
+                    console.log('✓ Got VNC ticket, authenticating...');
+                    rfb.sendCredentials({ password: data.ticket });
+                } else {
+                    console.error('❌ Failed to get VNC ticket:', data.error);
+                    showError('Authentication failed', 'Could not retrieve VNC ticket from server');
+                }
+            } catch (error) {
+                console.error('❌ Error fetching VNC ticket:', error);
+                showError('Authentication failed', 'Error communicating with server');
+            }
+        }
+        
+        function securityFailure(e) {
+            console.error('🔒 Security failure:', e.detail);
+            const reason = e.detail.reason || 'Security verification failed';
+            showError('Security error: ' + reason, 
+                     '<strong>SSL Certificate Issue</strong><br><br>' +
+                     '1. Open <a href="https://' + proxmoxHost + ':' + proxmoxPort + '" target="_blank" style="color: #4CAF50; font-weight: bold;">https://' + proxmoxHost + ':' + proxmoxPort + '</a><br>' +
+                     '2. Accept the certificate<br>' +
+                     '3. <button onclick="location.reload()" style="background: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px;">Reload Console</button>');
+        }
+        
+        function initializeVNC() {
+            try {
+                console.log('🔌 Initializing noVNC connection to Proxmox...');
+                
+                // Clear screen
+                const screenDiv = document.getElementById('screen');
+                screenDiv.innerHTML = '';
+                
+                // Hide error, show loading
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('loading').style.display = 'block';
+                
+                // Create RFB connection to Flask proxy with optimized settings
+                rfb = new RFB(screenDiv, wsUrl, {
+                    shared: false,  // Exclusive connection for better performance
+                    repeaterID: '',
+                    wsProtocols: ['binary']
+                });
+                
+                // Set event handlers
+                rfb.addEventListener("connect", connectedToServer);
+                rfb.addEventListener("disconnect", disconnectedFromServer);
+                rfb.addEventListener("credentialsrequired", credentialsAreRequired);
+                rfb.addEventListener("securityfailure", securityFailure);
+                
+                // Configure display for maximum performance
+                rfb.scaleViewport = true;  // Enable scaling to fit window
+                rfb.resizeSession = false;  // Don't resize VM display (causes lag)
+                rfb.viewOnly = false;
+                rfb.clipViewport = false;  // Don't clip viewport
+                rfb.dragViewport = false;   // No need to drag when scaling is enabled
+                
+                // Remove visual indicator styling
+                screenDiv.style.cursor = 'default';
+                screenDiv.title = ''
+                
+                // OPTIMIZED FOR INSTALLER PERFORMANCE (e.g., Debian installer)
+                // Use aggressive encoding for maximum speed over LAN
+                rfb.compressionLevel = 2;  // 0-9, use some compression for speed (2 = good balance)
+                rfb.qualityLevel = 0;  // 0-9, lower = faster rendering (0 = lowest quality, maximum speed)
+                rfb.focusOnClick = true;
+                
+                // Use fast encoding methods for performance
+                // Lower quality with compression gives better frame rates in installers
+                console.log('🚀 VNC optimized for speed: compression=2, quality=0');
+                
+                console.log('✅ noVNC RFB connection initialized, attempting to connect via proxy...');
+                
+            } catch (err) {
+                console.error('❌ Failed to create RFB connection:', err);
+                showError('Failed to initialize console: ' + err.message, 'Check browser console (F12) for more details.');
+            }
+        }
+        
+        // Initialize on page load
+        initializeVNC();
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (rfb) {
+                rfb.scaleViewport = true;
+            }
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            cancelScheduledRefresh();
+            if (rfb) {
+                rfb.disconnect();
+            }
+        });
+    </script>
+</body>
+</html>

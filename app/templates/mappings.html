@@ -1,0 +1,585 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+/* Override main container to be full width for mappings page */
+.main {
+    max-width: none !important;
+    width: 100% !important;
+    padding: 20px 40px 40px 40px;
+}
+
+.container {
+    max-width: none !important;
+    width: 100% !important;
+}
+</style>
+
+<div class="page-header" style="max-width: 100%;">
+    <div>
+        <h1>User ↔ VM Mappings</h1>
+        <p class="page-subtitle">
+            Assign which VMs each Proxmox user can see and control.
+        </p>
+    </div>
+</div>
+
+<!-- Loading indicator -->
+<div id="mappings-loading" style="padding: 3rem 0; text-align: center;">
+    <div class="spinner" style="margin: 0 auto 1rem;"></div>
+    <p style="color: #666; font-size: 16px;">Loading mappings data...</p>
+</div>
+
+<div id="mappings-content" style="display: none;">
+    <div class="mapping-layout" style="max-width: 100%; width: 100%; margin: 0; padding: 2rem; background: white; border-radius: 8px;">
+        <h2><i class="ti ti-arrows-left-right"></i> VM Mappings</h2>
+
+        <div id="alert-container"></div>
+
+        <!-- User Selection -->
+        <label for="user-select">Select User</label>
+        
+        <!-- User Search -->
+        <input type="text" id="user-search" placeholder="Search users..." 
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 0.5rem;">
+        
+        <select id="user-select" class="form-control" size="10" 
+                style="height: 250px; font-family: monospace;">
+            <option value="">Select a user…</option>
+        </select>
+
+        <!-- User Info Area (shown when user selected) -->
+        <div id="user-info-area" style="display: none; margin-top: 1.5rem; padding: 1rem; background: #f9f9f9; border-radius: 6px;">
+            <h3 style="font-size: 16px; margin-bottom: 0.5rem;" id="selected-user-name"></h3>
+            <div id="user-classes" style="margin-bottom: 0.5rem; color: #666; font-size: 14px;">
+                <strong>Classes:</strong> <span id="user-classes-list">None</span>
+            </div>
+            <div id="user-current-vms" style="color: #666; font-size: 14px; margin-bottom: 1rem;">
+                <strong>Current VM Assignments:</strong> <span id="user-vms-list">None</span>
+            </div>
+            
+            <!-- Class Assignment Section -->
+            <div id="class-assignment-section" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+                <h4 style="font-size: 14px; margin-bottom: 0.5rem;">Assign to Class</h4>
+                <p style="font-size: 13px; color: #666; margin-bottom: 0.75rem;">Add this user to a class to auto-assign them a VM</p>
+                <div style="display: flex; gap: 0.5rem;">
+                    <select id="class-select" class="form-control" style="flex: 1;">
+                        <option value="">Select a class...</option>
+                    </select>
+                    <button id="assign-class-btn" class="btn-primary" style="white-space: nowrap;">
+                        Assign to Class
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VM Selection Area (shown when user selected) -->
+        <div id="vm-selection-area" style="display: none; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #ddd; width: 100%; box-sizing: border-box;">
+            
+            <!-- VM Checkboxes -->
+            <div style="margin-bottom: 1.5rem; width: 100%;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+                    Assign VMs
+                    <span style="font-weight: normal; color: #666; font-size: 13px;" id="selected-count">(0 selected)</span>
+                </label>
+                <p class="help-text" style="margin-bottom: 0.75rem;">
+                    Select VMs this user can access.
+                </p>
+                
+                <!-- Search/Filter -->
+                <input type="text" id="vm-search" placeholder="Search VMs by ID or name..." 
+                       style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 0.75rem; box-sizing: border-box;">
+                
+                <!-- Scrollable VM List -->
+                <div class="vm-checkbox-container" id="vm-checkbox-container">
+                    <!-- Checkboxes populated here -->
+                </div>
+            </div>
+
+            <!-- Confirm Button -->
+            <button id="confirm-btn" class="btn-primary" style="width: 100%;">
+                Confirm Selection
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+.mapping-layout {
+    max-width: 100%;
+    width: 100%;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.vm-checkbox-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.75rem;
+    background: #fafafa;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.vm-checkbox-container::-webkit-scrollbar {
+    width: 12px;
+}
+
+.vm-checkbox-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.vm-checkbox-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.vm-checkbox-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.vm-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+    margin-bottom: 0.25rem;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.vm-checkbox-item:hover {
+    background: #f0f7ff;
+}
+
+.vm-checkbox-item input[type="checkbox"] {
+    margin-right: 0.75rem;
+    cursor: pointer;
+}
+
+.vm-checkbox-item label {
+    margin: 0;
+    cursor: pointer;
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.vm-id-badge {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1976d2;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 13px;
+    margin-right: 0.5rem;
+}
+
+.vm-cluster-badge {
+    display: inline-block;
+    background: #f3e5f5;
+    color: #7b1fa2;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 11px;
+    margin-left: 0.5rem;
+}
+
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.alert-success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.alert-error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+</style>
+
+<script>
+let allVMs = [];
+let allUsers = [];
+let currentMappings = {};
+let selectedUser = '';
+let userClasses = {};
+let allClasses = [];
+
+async function loadMappingsData() {
+    try {
+        const resp = await fetch("/api/mappings");
+        if (!resp.ok) {
+            showError("Failed to load mappings data");
+            return;
+        }
+        const data = await resp.json();
+        
+        allVMs = data.vms || [];
+        allUsers = data.users || [];
+        currentMappings = data.mapping || {};
+        
+        // Populate user dropdown
+        const userSelect = document.getElementById('user-select');
+        userSelect.innerHTML = '<option value="">Select a user…</option>';
+        allUsers.forEach(u => {
+            const option = document.createElement('option');
+            option.value = u.userid;
+            const typeLabel = u.type === 'proxmox' ? '[PVE]' : '[Local]';
+            const roleLabel = u.role ? ` (${u.role})` : '';
+            option.textContent = `${typeLabel} ${u.userid}${roleLabel}`;
+            userSelect.appendChild(option);
+        });
+        
+        // Fetch user classes
+        await loadUserClasses();
+        
+        // Populate class dropdown
+        populateClassDropdown();
+        
+        // Hide loading, show content
+        document.getElementById('mappings-loading').style.display = 'none';
+        document.getElementById('mappings-content').style.display = 'block';
+    } catch (e) {
+        console.error("Failed to load mappings:", e);
+        showError("Error loading mappings data: " + e.message);
+    }
+}
+
+async function loadUserClasses() {
+    try {
+        const resp = await fetch("/api/classes");
+        if (!resp.ok) return;
+        
+        const data = await resp.json();
+        allClasses = data.classes || [];
+        
+        // Build a map of username -> class names
+        userClasses = {};
+        
+        allClasses.forEach(cls => {
+            if (cls.students) {
+                cls.students.forEach(student => {
+                    const username = student.username;
+                    if (!userClasses[username]) {
+                        userClasses[username] = [];
+                    }
+                    userClasses[username].push(cls.name);
+                });
+            }
+        });
+    } catch (e) {
+        console.error("Failed to load user classes:", e);
+    }
+}
+
+function populateClassDropdown() {
+    const classSelect = document.getElementById('class-select');
+    classSelect.innerHTML = '<option value="">Select a class...</option>';
+    allClasses.forEach(cls => {
+        const option = document.createElement('option');
+        option.value = cls.id;
+        option.textContent = `${cls.name} (${cls.students?.length || 0} students)`;
+        classSelect.appendChild(option);
+    });
+}
+
+function showError(message) {
+    const loading = document.getElementById('mappings-loading');
+    loading.innerHTML = `<p style="color: #d32f2f; font-size: 16px;">${message}</p>`;
+}
+
+function showAlert(message, type = 'success') {
+    const container = document.getElementById('alert-container');
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type}`;
+    alert.textContent = message;
+    container.appendChild(alert);
+    
+    setTimeout(() => {
+        alert.remove();
+    }, 5000);
+}
+
+// User selection handler
+document.addEventListener('DOMContentLoaded', () => {
+    const userSelect = document.getElementById('user-select');
+    const userSearch = document.getElementById('user-search');
+    const vmSelectionArea = document.getElementById('vm-selection-area');
+    const selectedUserName = document.getElementById('selected-user-name');
+    const vmCheckboxContainer = document.getElementById('vm-checkbox-container');
+    const vmSearch = document.getElementById('vm-search');
+    const confirmBtn = document.getElementById('confirm-btn');
+    const selectedCount = document.getElementById('selected-count');
+    
+    // User search handler
+    userSearch.addEventListener('input', (e) => {
+        filterUsers(e.target.value.toLowerCase());
+    });
+    
+    userSelect.addEventListener('change', (e) => {
+        selectedUser = e.target.value;
+        
+        if (!selectedUser) {
+            document.getElementById('user-info-area').style.display = 'none';
+            vmSelectionArea.style.display = 'none';
+            return;
+        }
+        
+        // Show user info area
+        const userInfoArea = document.getElementById('user-info-area');
+        userInfoArea.style.display = 'block';
+        
+        selectedUserName.textContent = selectedUser;
+        
+        // Get username without realm for class lookup
+        const username = selectedUser.split('@')[0];
+        
+        // Display user's classes
+        const classList = document.getElementById('user-classes-list');
+        const classes = userClasses[username] || [];
+        if (classes.length > 0) {
+            classList.textContent = classes.join(', ');
+        } else {
+            classList.textContent = 'None';
+        }
+        
+        // Display current VM assignments
+        const vmsList = document.getElementById('user-vms-list');
+        const userVMs = currentMappings[selectedUser] || [];
+        if (userVMs.length > 0) {
+            const vmNames = userVMs.map(vmid => {
+                const vm = allVMs.find(v => v.vmid === vmid);
+                return vm ? `${vmid} (${vm.name})` : vmid;
+            });
+            vmsList.textContent = vmNames.join(', ');
+        } else {
+            vmsList.textContent = 'None';
+        }
+        
+        vmSelectionArea.style.display = 'block';
+        
+        // Render VM checkboxes
+        renderVMCheckboxes();
+        updateSelectedCount();
+    });
+    
+    vmSearch.addEventListener('input', (e) => {
+        renderVMCheckboxes(e.target.value.toLowerCase());
+    });
+    
+    confirmBtn.addEventListener('click', async () => {
+        const checkboxes = vmCheckboxContainer.querySelectorAll('input[type="checkbox"]:checked');
+        const selectedVMIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+        
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving...';
+        
+        try {
+            const resp = await fetch('/api/mappings/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user: selectedUser,
+                    vmids: selectedVMIds
+                })
+            });
+            
+            const data = await resp.json();
+            
+            if (data.ok) {
+                currentMappings[selectedUser] = data.mapping;
+                if (data.mapping.length === 0) {
+                    delete currentMappings[selectedUser];
+                }
+                
+                // Update the user info display with new VM assignments
+                const vmsList = document.getElementById('user-vms-list');
+                const userVMs = currentMappings[selectedUser] || [];
+                if (userVMs.length > 0) {
+                    const vmNames = userVMs.map(vmid => {
+                        const vm = allVMs.find(v => v.vmid === vmid);
+                        return vm ? `${vmid} (${vm.name})` : vmid;
+                    });
+                    vmsList.textContent = vmNames.join(', ');
+                } else {
+                    vmsList.textContent = 'None';
+                }
+                
+                showAlert(`Successfully updated mappings for ${selectedUser}`, 'success');
+            } else {
+                showAlert(`Failed: ${data.error}`, 'error');
+            }
+        } catch (e) {
+            showAlert(`Error: ${e.message}`, 'error');
+        } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Confirm Selection';
+        }
+    });
+    
+    // Assign user to class button
+    const assignClassBtn = document.getElementById('assign-class-btn');
+    assignClassBtn.addEventListener('click', async () => {
+        const classId = document.getElementById('class-select').value;
+        if (!classId) {
+            showAlert('Please select a class', 'error');
+            return;
+        }
+        
+        assignClassBtn.disabled = true;
+        assignClassBtn.textContent = 'Assigning...';
+        
+        try {
+            // Use the class join API with the username
+            const resp = await fetch(`/api/classes/${classId}/students`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: selectedUser })
+            });
+            
+            const data = await resp.json();
+            
+            if (data.ok) {
+                showAlert(`Successfully assigned ${selectedUser} to class`, 'success');
+                // Reload classes to update display
+                await loadUserClasses();
+                
+                // Update the user classes display
+                const classList = document.getElementById('user-classes-list');
+                const classes = userClasses[selectedUser] || [];
+                classList.textContent = classes.length > 0 ? classes.join(', ') : 'None';
+            } else {
+                showAlert(`Failed: ${data.error}`, 'error');
+            }
+        } catch (e) {
+            console.error('Failed to assign to class:', e);
+            showAlert('Error assigning to class', 'error');
+        } finally {
+            assignClassBtn.disabled = false;
+            assignClassBtn.textContent = 'Assign to Class';
+        }
+    });
+});
+
+function renderVMCheckboxes(searchTerm = '') {
+    const container = document.getElementById('vm-checkbox-container');
+    const userMappings = currentMappings[selectedUser] || [];
+    
+    container.innerHTML = '';
+    
+    // Filter VMs by search term
+    const filteredVMs = allVMs.filter(vm => {
+        if (!searchTerm) return true;
+        const vmidStr = vm.vmid.toString();
+        const vmName = (vm.name || '').toLowerCase();
+        return vmidStr.includes(searchTerm) || vmName.includes(searchTerm);
+    });
+    
+    if (filteredVMs.length === 0) {
+        container.innerHTML = '<p style="color: #666; text-align: center; padding: 1rem;">No VMs found.</p>';
+        return;
+    }
+    
+    filteredVMs.forEach(vm => {
+        const div = document.createElement('div');
+        div.className = 'vm-checkbox-item';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = vm.vmid;
+        checkbox.id = `vm-${vm.vmid}`;
+        checkbox.checked = userMappings.includes(vm.vmid);
+        checkbox.addEventListener('change', updateSelectedCount);
+        
+        const label = document.createElement('label');
+        label.htmlFor = `vm-${vm.vmid}`;
+        label.innerHTML = `
+            <span>
+                <span class="vm-id-badge">${vm.vmid}</span>
+                ${vm.name}
+            </span>
+            <span class="vm-cluster-badge">${vm.cluster_name || vm.cluster_id}</span>
+        `;
+        
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        container.appendChild(div);
+    });
+}
+
+function updateSelectedCount() {
+    const container = document.getElementById('vm-checkbox-container');
+    const checked = container.querySelectorAll('input[type="checkbox"]:checked').length;
+    document.getElementById('selected-count').textContent = `(${checked} selected)`;
+}
+
+function filterUsers(searchTerm) {
+    const userSelect = document.getElementById('user-select');
+    const currentValue = userSelect.value;
+    
+    // Clear and rebuild options
+    userSelect.innerHTML = '<option value="">Select a user…</option>';
+    
+    const filteredUsers = allUsers.filter(u => {
+        if (!searchTerm) return true;
+        return u.userid.toLowerCase().includes(searchTerm);
+    });
+    
+    filteredUsers.forEach(u => {
+        const option = document.createElement('option');
+        option.value = u.userid;
+        option.textContent = u.userid;
+        
+        // Maintain selection if current user still matches filter
+        if (u.userid === currentValue) {
+            option.selected = true;
+        }
+        
+        userSelect.appendChild(option);
+    });
+    
+    // Show count of filtered results
+    if (searchTerm && filteredUsers.length > 0) {
+        userSelect.options[0].textContent = `${filteredUsers.length} user(s) found`;
+    } else if (searchTerm && filteredUsers.length === 0) {
+        userSelect.options[0].textContent = 'No users found';
+    }
+}
+
+window.addEventListener('load', loadMappingsData);
+</script>
+
+{% endblock %}

@@ -1,0 +1,713 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1><i class="ti ti-circle-plus"></i> Create New Class</h1>
+        <p class="page-subtitle">Set up a new lab class with a VM template</p>
+    </div>
+</div>
+
+<div class="form-container">
+    <form id="create-class-form" class="form-panel">
+        <div class="form-group">
+            <label for="class-name">Class Name *</label>
+            <input type="text" id="class-name" name="name" required 
+                   placeholder="e.g., Introduction to Linux" maxlength="120">
+        </div>
+        
+        <div class="form-group">
+            <label for="class-description">Description</label>
+            <textarea id="class-description" name="description" rows="3"
+                      placeholder="Brief description of this class..."></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="deployment-cluster">Deployment Cluster *</label>
+            <select id="deployment-cluster" name="deployment_cluster">
+                <option value="">Loading clusters...</option>
+            </select>
+            <small class="form-help">Select which cluster to deploy VMs to (determines available templates)</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="template-select">Template</label>
+            <div style="display: flex; gap: 0.5rem; align-items: start;">
+                <select id="template-select" name="template_id" style="flex: 1;">
+                    <option value="">Select cluster first...</option>
+                </select>
+                <button type="button" id="refresh-templates-btn" class="btn-secondary" style="padding: 0.5rem 1rem; white-space: nowrap;" title="Refresh template cache from Proxmox">
+                    <i class="ti ti-refresh"></i> Refresh
+                </button>
+            </div>
+            <small class="form-help">Select a template or choose "None" to create VMs without a template</small>
+        </div>
+        
+        <div class="form-group" id="alter-specs-container" style="display: none;">
+            <label>
+                <input type="checkbox" id="alter-specs-checkbox" style="width: auto; margin-right: 8px;">
+                Alter VM Specs
+            </label>
+            <small class="form-help">Customize CPU and RAM for VMs created from template</small>
+        </div>
+        
+        <div id="vm-specs-section" style="display: none;">
+            <div class="form-group">
+                <label for="cpu-cores">CPU Cores per VM</label>
+                <input type="number" id="cpu-cores" name="cpu_cores" min="1" max="16" value="2"
+                       placeholder="Number of CPU cores">
+                <small class="form-help">Number of CPU cores allocated to each VM</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="memory-mb">RAM per VM (MB)</label>
+                <input type="number" id="memory-mb" name="memory_mb" min="512" max="32768" step="512" value="2048"
+                       placeholder="RAM in megabytes">
+                <small class="form-help">RAM allocated to each VM (2048 MB = 2 GB)</small>
+            </div>
+            
+            <div class="form-group" id="disk-size-group">
+                <label for="disk-size-gb">Disk Size per VM (GB)</label>
+                <input type="number" id="disk-size-gb" name="disk_size_gb" min="8" max="500" value="32"
+                       placeholder="Disk size in gigabytes">
+                <small class="form-help">Disk size for template-less VMs (32 GB default). Ignored when using a template.</small>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="pool-size">VM Pool Size</label>
+            <input type="number" id="pool-size" name="pool_size" min="0" value="0"
+                   placeholder="Number of VMs to pre-create">
+            <small class="form-help">VMs can be created later if set to 0</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="deployment-node">Deployment Node (Optional)</label>
+            <select id="deployment-node" name="deployment_node">
+                <option value="">Auto-distribute across nodes (recommended)</option>
+            </select>
+            <small class="form-help">Optional: Force all VMs to a specific node (overrides load balancing)</small>
+        </div>
+        
+        <div class="form-actions">
+            <a href="{{ url_for('classes.classes_list') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">
+                <i class="ti ti-check"></i> Create Class
+            </button>
+        </div>
+    </form>
+</div>
+
+<style>
+.form-container {
+    max-width: 700px;
+    margin: 2rem auto;
+}
+
+.form-panel {
+    background: white;
+    border: 1px solid #e1dfdd;
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #323130;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #8a8886;
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.1);
+}
+
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    color: #605e5c;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e1dfdd;
+}
+
+.btn-primary, .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.btn-primary {
+    background: #0078d4;
+    color: white;
+    border: none;
+}
+
+.btn-primary:hover {
+    background: #106ebe;
+}
+
+.btn-secondary {
+    background: #f3f2f1;
+    color: #323130;
+    border: 1px solid #8a8886;
+}
+
+.btn-secondary:hover {
+    background: #e1dfdd;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+
+<script>
+// Load templates when page loads
+document.addEventListener('DOMContentLoaded', async function() {
+    // Check if template ID was passed in URL (from "Use in Class" button)
+    const urlParams = new URLSearchParams(window.location.search);
+    const preselectedTemplateId = urlParams.get('template');
+    
+    if (preselectedTemplateId) {
+        console.log('🎯 Template ID from URL:', preselectedTemplateId);
+        console.log('Will pre-select this template after clusters and templates load...');
+        // Store for later selection after templates are loaded
+        window.preselectedTemplateId = preselectedTemplateId;
+    } else {
+        console.log('ℹ️ No template ID in URL, user will select manually');
+    }
+    
+    await loadClusters();
+    
+    // Handle template selection and checkbox changes
+    document.getElementById('template-select').addEventListener('change', function() {
+        updateSpecsVisibility();
+    });
+
+    document.getElementById('alter-specs-checkbox').addEventListener('change', function() {
+        updateSpecsVisibility();
+    });
+    
+    // Handle refresh templates button
+    document.getElementById('refresh-templates-btn').addEventListener('click', async function() {
+        const btn = this;
+        const originalHTML = btn.innerHTML;
+        
+        // Check if user is admin
+        const isAdmin = {{ 'true' if is_admin else 'false' }};
+        if (!isAdmin) {
+            alert('Only administrators can refresh the template cache.');
+            return;
+        }
+        
+        // Disable button and show loading state
+        btn.disabled = true;
+        btn.innerHTML = '<i class="ti ti-loader-2" style="animation: spin 1s linear infinite;"></i> Refreshing...';
+        
+        try {
+            const resp = await fetch('/api/sync/templates/trigger', {
+                method: 'POST'
+            });
+            const data = await resp.json();
+            
+            if (data.ok) {
+                // Show success message
+                btn.innerHTML = '<i class="ti ti-check"></i> Refreshed!';
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }, 2000);
+                
+                // Reload templates for current cluster
+                const clusterId = document.getElementById('deployment-cluster').value;
+                if (clusterId) {
+                    await loadTemplatesForCluster(clusterId);
+                }
+                
+                // Show stats message if available
+                if (data.message) {
+                    console.log('Template refresh:', data.message);
+                }
+            } else {
+                btn.innerHTML = '<i class="ti ti-alert-triangle"></i> Failed';
+                alert('Failed to refresh templates: ' + (data.error || 'Unknown error'));
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        } catch (e) {
+            console.error('Error refreshing templates:', e);
+            btn.innerHTML = '<i class="ti ti-alert-triangle"></i> Error';
+            alert('Error refreshing templates: ' + e.message);
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }, 2000);
+        }
+    });
+    
+    // Update templates and nodes when cluster changes
+    document.getElementById('deployment-cluster').addEventListener('change', async function() {
+        const clusterId = this.value;
+        await loadTemplatesForCluster(clusterId);
+        await loadNodesForCluster(clusterId);
+    });
+});
+
+async function loadTemplates(usePoll = false) {
+    const selectElement = document.getElementById('template-select');
+    
+    try {
+        const url = usePoll ? '/api/classes/templates?poll=true' : '/api/classes/templates';
+        const resp = await fetch(url);
+        const data = await resp.json();
+        
+        if (!data.ok) {
+            selectElement.innerHTML = '<option value="">Failed to load templates</option>';
+            return;
+        }
+        
+        const proxmoxTemplates = data.proxmox_templates || [];
+        const registeredTemplates = data.registered_templates || [];
+        
+        // Create map of registered templates by VMID for quick lookup
+        const registeredMap = {};
+        registeredTemplates.forEach(t => {
+            registeredMap[t.proxmox_vmid] = t.id;
+        });
+        
+        // Store template data for later use
+        window.templateData = {
+            proxmox: proxmoxTemplates,
+            registered: registeredMap
+        };
+        
+        if (proxmoxTemplates.length === 0) {
+            selectElement.innerHTML = '<option value="">None (No templates found)</option>';
+            // Show message to user
+            if (!usePoll) {
+                showTemplateMessage('No templates found. Templates may be replicating to nodes...', 'info');
+                // Trigger replication and start polling
+                await triggerReplicationAndPoll();
+            }
+        } else {
+            selectElement.innerHTML = '<option value="">None</option>' +
+                proxmoxTemplates.map(t => {
+                    const registered = registeredMap[t.vmid] ? ' ✓' : '';
+                    return `<option value="${t.vmid}" data-name="${t.name}" data-node="${t.node}" data-cluster="${t.cluster_id || ''}">${t.name} (VMID: ${t.vmid})${registered}</option>`;
+                }).join('');
+            hideTemplateMessage();
+            
+            // Auto-select template if ID was provided in URL
+            if (window.preselectedTemplateId) {
+                console.log('🎯 Attempting to pre-select template ID:', window.preselectedTemplateId);
+                await selectTemplateById(window.preselectedTemplateId);
+                delete window.preselectedTemplateId; // Clear after use
+            } else {
+                console.log('ℹ️ No template to pre-select');
+            }
+        }
+        
+        // Update specs visibility after templates are loaded
+        updateSpecsVisibility();
+        
+    } catch (e) {
+        console.error('Failed to load templates:', e);
+        selectElement.innerHTML = '<option value="">None</option>';
+        // Update specs visibility even on error
+        updateSpecsVisibility();
+    }
+}
+
+async function selectTemplateById(templateId) {
+    console.log('🔍 selectTemplateById called with ID:', templateId);
+    try {
+        // Fetch template details from database by ID
+        const url = `/api/templates?id=${templateId}`;
+        console.log('Fetching template from:', url);
+        const resp = await fetch(url);
+        const data = await resp.json();
+        
+        console.log('Template API response:', data);
+        
+        if (!data.ok || !data.templates || data.templates.length === 0) {
+            console.warn('❌ Template not found:', templateId);
+            return;
+        }
+        
+        const template = data.templates[0];
+        console.log('✅ Found template:', template.name, 'VMID:', template.proxmox_vmid);
+        
+        const selectElement = document.getElementById('template-select');
+        
+        // Try to find and select the template by VMID
+        const vmid = template.proxmox_vmid;
+        const option = Array.from(selectElement.options).find(opt => opt.value == vmid);
+        
+        if (option) {
+            selectElement.value = vmid;
+            console.log('✅ Auto-selected template:', template.name, 'VMID:', vmid);
+            
+            // Trigger change event to update UI
+            selectElement.dispatchEvent(new Event('change'));
+            
+            // Show success message
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = 'background: #d4edda; color: #155724; padding: 12px; border-radius: 4px; margin-bottom: 16px; border: 1px solid #c3e6cb;';
+            messageDiv.innerHTML = `<i class="ti ti-circle-check"></i> Template "${template.name}" has been pre-selected for your class.`;
+            document.querySelector('.form-card').insertBefore(messageDiv, document.querySelector('.form-card').firstChild);
+            
+            // Remove message after 5 seconds
+            setTimeout(() => messageDiv.remove(), 5000);
+        } else {
+            console.warn('❌ Template VMID not found in dropdown:', vmid, 'Available options:', Array.from(selectElement.options).map(o => o.value));
+        }
+        
+    } catch (e) {
+        console.error('❌ Failed to select template:', e);
+    }
+}
+
+async function loadClusters() {
+    const selectElement = document.getElementById('deployment-cluster');
+    try {
+        const resp = await fetch('/api/clusters');
+        const data = await resp.json();
+        
+        if (data.ok && data.clusters) {
+            selectElement.innerHTML = data.clusters.map(c => 
+                `<option value="${c.id}">${c.name}</option>`
+            ).join('');
+            
+            // Load templates and nodes for first cluster
+            if (data.clusters.length > 0) {
+                await loadTemplatesForCluster(data.clusters[0].id);
+                await loadNodesForCluster(data.clusters[0].id);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load clusters:', e);
+        selectElement.innerHTML = '<option value="">Default Cluster</option>';
+    }
+}
+
+async function loadTemplatesForCluster(clusterId) {
+    const selectElement = document.getElementById('template-select');
+    
+    if (!clusterId) {
+        selectElement.innerHTML = '<option value="">Select cluster first...</option>';
+        return;
+    }
+    
+    selectElement.innerHTML = '<option value="">Loading templates...</option>';
+    
+    try {
+        const resp = await fetch(`/api/classes/templates?cluster_id=${clusterId}`);
+        const data = await resp.json();
+        
+        if (!data.ok) {
+            selectElement.innerHTML = '<option value="">Failed to load templates</option>';
+            return;
+        }
+        
+        const proxmoxTemplates = data.proxmox_templates || [];
+        const registeredTemplates = data.registered_templates || [];
+        
+        // Backend already filters by cluster, no need for client-side filtering
+        
+        // Create map of registered templates by VMID for quick lookup
+        const registeredMap = {};
+        registeredTemplates.forEach(t => {
+            registeredMap[t.proxmox_vmid] = t.id;
+        });
+        
+        // Store template data for later use
+        window.templateData = {
+            proxmox: proxmoxTemplates,
+            registered: registeredMap
+        };
+        
+        if (proxmoxTemplates.length === 0) {
+            selectElement.innerHTML = '<option value="">None (No templates found for this cluster)</option>';
+        } else {
+            selectElement.innerHTML = '<option value="">None</option>' +
+                proxmoxTemplates.map(t => {
+                    const registered = registeredMap[t.vmid] ? ' ✓' : '';
+                    return `<option value="${t.vmid}" data-name="${t.name}" data-node="${t.node}" data-cluster="${t.cluster_id || ''}">${t.name} (VMID: ${t.vmid})${registered}</option>`;
+                }).join('');
+            
+            // Auto-select template if ID was provided in URL
+            if (window.preselectedTemplateId) {
+                await selectTemplateById(window.preselectedTemplateId);
+                delete window.preselectedTemplateId; // Clear after use
+            }
+        }
+        
+        // Update specs visibility after templates are loaded
+        updateSpecsVisibility();
+        
+    } catch (e) {
+        console.error('Failed to load templates:', e);
+        selectElement.innerHTML = '<option value="">None</option>';
+        updateSpecsVisibility();
+    }
+}
+
+async function loadNodesForCluster(clusterId) {
+    const selectElement = document.getElementById('deployment-node');
+    selectElement.innerHTML = '<option value="">Loading nodes...</option>';
+    
+    if (!clusterId) {
+        selectElement.innerHTML = '<option value="">Auto-distribute across nodes (recommended)</option>';
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/clusters/${clusterId}/nodes`);
+        const data = await resp.json();
+        
+        if (data.ok && data.nodes) {
+            selectElement.innerHTML = '<option value="">Auto-distribute across nodes (recommended)</option>' +
+                data.nodes.map(n => `<option value="${n.node}">${n.node} (${n.status})</option>`).join('');
+        } else {
+            selectElement.innerHTML = '<option value="">Auto-distribute across nodes (recommended)</option>';
+        }
+    } catch (e) {
+        console.error('Failed to load nodes:', e);
+        selectElement.innerHTML = '<option value="">Auto-distribute across nodes (recommended)</option>';
+    }
+}
+
+function updateSpecsVisibility() {
+    const templateSelect = document.getElementById('template-select');
+    const alterCheckboxContainer = document.getElementById('alter-specs-container');
+    const alterCheckbox = document.getElementById('alter-specs-checkbox');
+    const specsSection = document.getElementById('vm-specs-section');
+    
+    const noTemplate = templateSelect.value === '';
+    const alterChecked = alterCheckbox.checked;
+    
+    if (noTemplate) {
+        // No template selected - always show specs, hide checkbox
+        alterCheckboxContainer.style.display = 'none';
+        specsSection.style.display = 'block';
+    } else {
+        // Template selected - show checkbox, show specs only if checked
+        alterCheckboxContainer.style.display = 'block';
+        if (alterChecked) {
+            specsSection.style.display = 'block';
+        } else {
+            specsSection.style.display = 'none';
+        }
+    }
+}
+
+// Handle form submission
+document.getElementById('create-class-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('class-name').value.trim();
+    const description = document.getElementById('class-description').value.trim();
+    const poolSize = parseInt(document.getElementById('pool-size').value) || 0;
+    const cpuCores = parseInt(document.getElementById('cpu-cores').value) || 2;
+    const memoryMb = parseInt(document.getElementById('memory-mb').value) || 2048;
+    const diskSizeGb = parseInt(document.getElementById('disk-size-gb').value) || 32;
+    const templateVmid = parseInt(document.getElementById('template-select').value);
+    
+    if (!name) {
+        alert('Please enter a class name.');
+        return;
+    }
+    
+    // Template is now optional
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ti ti-hourglass"></i> Creating...';
+    
+    try {
+        let templateId = null;
+        
+        // Only register template if one was selected
+        if (templateVmid) {
+            // Check if template is already registered, if not register it
+            templateId = window.templateData.registered[templateVmid];
+            
+            if (!templateId) {
+                // Template not registered yet - register it
+                const selectedOption = document.querySelector(`#template-select option[value="${templateVmid}"]`);
+                const templateName = selectedOption.dataset.name || `Template ${templateVmid}`;
+                const templateNode = selectedOption.dataset.node;
+                
+                const templateResp = await fetch('/api/classes/templates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: templateName,
+                        proxmox_vmid: templateVmid,
+                        node: templateNode
+                    })
+                });
+                const templateData = await templateResp.json();
+                if (templateData.ok && templateData.template) {
+                    templateId = templateData.template.id;
+                } else {
+                    throw new Error(templateData.error || 'Failed to register template');
+                }
+            }
+        }
+        
+        // Create the class with the template ID
+        const resp = await fetch('/api/classes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                description: description,
+                pool_size: poolSize,
+                cpu_cores: cpuCores,
+                memory_mb: memoryMb,
+                disk_size_gb: diskSizeGb,
+                template_id: templateId,
+                deployment_node: document.getElementById('deployment-node').value || null,
+                deployment_cluster: document.getElementById('deployment-cluster').value || null
+            })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            const classId = data.class.id;
+            
+            // Show progress message
+            const progressDiv = document.createElement('div');
+            progressDiv.id = 'class-creation-progress';
+            progressDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; text-align: center; min-width: 400px;';
+            progressDiv.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <i class="ti ti-refresh" style="font-size: 48px; animation: spin 2s linear infinite;"></i>
+                </div>
+                <h3 style="margin: 0 0 10px 0;">Creating Class VMs</h3>
+                <p id="progress-status" style="margin: 0; color: #666;">Deploying ${poolSize > 0 ? poolSize + ' student VMs + ' : ''}teacher VM + template...</p>
+                <p id="progress-detail" style="margin-top: 10px; font-size: 0.9em; color: #999;">Waiting for teacher VM...</p>
+                <p style="margin-top: 5px; font-size: 0.85em; color: #bbb;">This may take several minutes</p>
+            `;
+            document.body.appendChild(progressDiv);
+            
+            // Add spinner animation
+            const style = document.createElement('style');
+            style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+            
+            // Poll for teacher VM availability
+            let pollAttempts = 0;
+            const maxPollAttempts = 60; // Poll for up to 5 minutes (5s intervals)
+            
+            async function pollTeacherVM() {
+                pollAttempts++;
+                
+                // Guard against null classId
+                if (!classId || classId === 'null') {
+                    console.error('Cannot poll teacher VM: classId is null');
+                    return;
+                }
+                
+                try {
+                    const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+                    const data = await resp.json();
+                    
+                    // Update progress text
+                    const detailEl = document.getElementById('progress-detail');
+                    if (detailEl) {
+                        detailEl.textContent = `Checking teacher VM... (attempt ${pollAttempts}/${maxPollAttempts})`;
+                    }
+                    
+                    // Check if teacher VM is ready
+                    if (data.ok && data.template && data.template.proxmox_vmid) {
+                        // Teacher VM is ready!
+                        if (detailEl) {
+                            detailEl.textContent = 'Teacher VM ready! Redirecting...';
+                            detailEl.style.color = '#0b6a0b';
+                        }
+                        
+                        // Redirect to class page
+                        setTimeout(() => {
+                            window.location.href = '/classes/' + classId;
+                        }, 1000);
+                        return;
+                    }
+                    
+                    // Not ready yet, keep polling
+                    if (pollAttempts < maxPollAttempts) {
+                        setTimeout(pollTeacherVM, 5000); // Poll every 5 seconds
+                    } else {
+                        // Timeout - redirect anyway
+                        if (detailEl) {
+                            detailEl.textContent = 'Taking longer than expected, redirecting...';
+                            detailEl.style.color = '#d13438';
+                        }
+                        setTimeout(() => {
+                            window.location.href = '/classes/' + classId + '?deployment=inprogress';
+                        }, 2000);
+                    }
+                } catch (e) {
+                    console.error('Error polling teacher VM:', e);
+                    // Continue polling on error
+                    if (pollAttempts < maxPollAttempts) {
+                        setTimeout(pollTeacherVM, 5000);
+                    } else {
+                        window.location.href = '/classes/' + classId + '?deployment=inprogress';
+                    }
+                }
+            }
+            
+            // Start polling after initial delay
+            setTimeout(pollTeacherVM, 3000);
+        } else {
+            alert('Failed to create class: ' + (data.error || 'Unknown error'));
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="ti ti-check"></i> Create Class';
+        }
+    } catch (e) {
+        console.error('Error creating class:', e);
+        alert('Error creating class: ' + e.message);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-check"></i> Create Class';
+    }
+});
+</script>
+
+{% endblock %}

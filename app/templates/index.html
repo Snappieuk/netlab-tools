@@ -1,0 +1,1295 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{% if is_admin and request.endpoint == 'admin_view' %}Admin View - All Virtual Machines{% else %}My Lab Machines{% endif %}</h1>
+        <p class="page-subtitle">
+            Quick access to your Windows and Linux virtual machines
+        </p>
+    </div>
+</div>
+
+<!-- Summary Tiles -->
+<div class="summary-tiles">
+    <div class="summary-tile">
+        <div class="summary-tile-title">Windows VMs</div>
+        <div class="summary-tile-value" id="windows-count">{{ windows_vms|length if windows_vms else 0 }}</div>
+        <div class="summary-tile-subtitle" id="windows-running">{{ windows_vms|selectattr('status', 'equalto', 'running')|list|length if windows_vms else 0 }} running</div>
+    </div>
+    <div class="summary-tile">
+        <div class="summary-tile-title">Linux VMs</div>
+        <div class="summary-tile-value" id="linux-count">{{ linux_vms|length if linux_vms else 0 }}</div>
+        <div class="summary-tile-subtitle" id="linux-running">{{ linux_vms|selectattr('status', 'equalto', 'running')|list|length if linux_vms else 0 }} running</div>
+    </div>
+    <div class="summary-tile">
+        <div class="summary-tile-title">LXC Containers</div>
+        <div class="summary-tile-value" id="lxc-count">{{ lxc_containers|length if lxc_containers else 0 }}</div>
+        <div class="summary-tile-subtitle" id="lxc-running">{{ lxc_containers|selectattr('status', 'equalto', 'running')|list|length if lxc_containers else 0 }} running</div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+    <input type="text" 
+           id="search-input"
+           placeholder="Search by name, VMID, or IP..." 
+           value="{{ request.args.get('search', '') }}"
+           style="flex: 1; max-width: 400px; padding: 8px 12px; border: 1px solid #8a8886; border-radius: 4px; font-size: 13px;">
+    <select id="category-filter" class="filter-select">
+        <option value="all">All Categories</option>
+        <option value="windows">Windows Only</option>
+        <option value="linux">Linux Only</option>
+        <option value="lxc">LXC Only</option>
+    </select>
+    <select id="status-filter" class="filter-select">
+        <option value="all">All Statuses</option>
+        <option value="running">Running Only</option>
+        <option value="stopped">Stopped Only</option>
+    </select>
+    <select id="node-filter" class="filter-select">
+        <option value="all">All Nodes</option>
+    </select>
+</div>
+
+{% if message %}
+<div class="page-banner">{{ message }}</div>
+{% endif %}
+
+<!-- Loading indicator for progressive load -->
+{% if progressive_load %}
+<div id="loading-indicator" style="padding: 3rem 0; text-align: center;">
+    <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #0078d4; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+    <p style="color: #666; font-size: 16px;">Loading virtual machines...</p>
+</div>
+<style>
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}
+</style>
+{% endif %}
+
+<!-- VM Tables Container -->
+<div id="vm-tables-container">
+
+<!-- Windows VMs Table -->
+{% if windows_vms %}
+<h4 class="section-header" style="cursor: pointer; user-select: none;" onclick="toggleSection('windows-table')">
+    <i class="ti ti-chevron-down" id="windows-table-icon"></i> Windows VMs
+</h4>
+<table class="vm-table" id="windows-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>VMID</th>
+            <th>Node</th>
+            <th>Status</th>
+            <th>IP Address</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for vm in windows_vms %}
+        <tr data-vmid="{{ vm.vmid }}" data-category="windows" data-node="{{ vm.node }}" data-vm-name="{{ vm.name|lower }}" data-vm-ip="{{ vm.ip|lower if vm.ip else '' }}">
+            <td>
+                <strong>{{ vm.name }}</strong>
+                {% if vm.rdp_available %}<i class="ti ti-device-desktop" style="margin-left: 0.5rem; color: #0078d4;" title="RDP Available"></i>{% endif %}
+            </td>
+            <td>{{ vm.vmid }}</td>
+            <td>{{ vm.node }}</td>
+            <td>
+                <span class="badge {% if vm.status == 'running' %}badge-success{% elif vm.status == 'stopped' %}badge-danger{% else %}badge-secondary{% endif %}">
+                    {% if vm.status == 'running' %}● Running{% elif vm.status == 'stopped' %}● Stopped{% else %}● Unknown{% endif %}
+                </span>
+            </td>
+            <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+            <td>
+                <div class="action-buttons">
+                    <button class="btn-icon btn-icon-success btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="start"
+                            data-tooltip="Start VM"
+                            {% if vm.status == 'running' %}disabled{% endif %}>
+                        <i class="ti ti-player-play-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-danger btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="stop"
+                            data-tooltip="Stop VM"
+                            {% if vm.status == 'stopped' %}disabled{% endif %}>
+                        <i class="ti ti-player-stop-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-info"
+                            onclick="openVMConsole({{ vm.vmid }}, '{{ vm.cluster_id }}')"
+                            data-tooltip="Web Console">
+                        <i class="ti ti-browser"></i>
+                    </button>
+                    <a class="btn-icon btn-icon-primary" 
+                       href="/rdp/{{ vm.vmid }}.rdp"
+                       data-tooltip="Download RDP File">
+                        <i class="ti ti-file-download"></i>
+                    </a>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- Linux VMs Table -->
+{% if linux_vms %}
+<h4 class="section-header" style="cursor: pointer; user-select: none;" onclick="toggleSection('linux-table')">
+    <i class="ti ti-chevron-down" id="linux-table-icon"></i> Linux VMs
+</h4>
+<table class="vm-table" id="linux-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>VMID</th>
+            <th>Node</th>
+            <th>Status</th>
+            <th>IP Address</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for vm in linux_vms %}
+        <tr data-vmid="{{ vm.vmid }}" data-category="linux" data-node="{{ vm.node }}" data-vm-name="{{ vm.name|lower }}" data-vm-ip="{{ vm.ip|lower if vm.ip else '' }}">
+            <td>
+                <strong>{{ vm.name }}</strong>
+                {% if vm.rdp_available %}<i class="ti ti-device-desktop" style="margin-left: 0.5rem; color: #0078d4;" title="RDP Available"></i>{% endif %}
+            </td>
+            <td>{{ vm.vmid }}</td>
+            <td>{{ vm.node }}</td>
+            <td>
+                <span class="badge {% if vm.status == 'running' %}badge-success{% elif vm.status == 'stopped' %}badge-danger{% else %}badge-secondary{% endif %}">
+                    {% if vm.status == 'running' %}● Running{% elif vm.status == 'stopped' %}● Stopped{% else %}● Unknown{% endif %}
+                </span>
+            </td>
+            <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+            <td>
+                <div class="action-buttons">
+                    <button class="btn-icon btn-icon-success btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="start"
+                            data-tooltip="Start VM"
+                            {% if vm.status == 'running' %}disabled{% endif %}>
+                        <i class="ti ti-player-play-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-danger btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="stop"
+                            data-tooltip="Stop VM"
+                            {% if vm.status == 'stopped' %}disabled{% endif %}>
+                        <i class="ti ti-player-stop-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-dark btn-ssh-web" 
+                            data-vmid="{{ vm.vmid }}"
+                            data-ip="{{ vm.ip or '' }}"
+                            data-name="{{ vm.name }}"
+                            data-tooltip="Open Web SSH Terminal"
+                            {% if not vm.ip %}disabled{% endif %}>
+                        <i class="ti ti-terminal"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-dark btn-ssh-copy" 
+                            data-vmid="{{ vm.vmid }}"
+                            data-ip="{{ vm.ip or '' }}"
+                            data-tooltip="Copy SSH Command"
+                            {% if not vm.ip %}disabled{% endif %}>
+                        <i class="ti ti-clipboard"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-info"
+                            onclick="openVMConsole({{ vm.vmid }}, '{{ vm.cluster_id }}')"
+                            data-tooltip="Web Console">
+                        <i class="ti ti-browser"></i>
+                    </button>
+                    {% if vm.rdp_available %}
+                    <a class="btn-icon btn-icon-primary" 
+                       href="/rdp/{{ vm.vmid }}.rdp"
+                       data-tooltip="RDP File">
+                        <i class="ti ti-file-download"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- LXC Containers Table -->
+{% if lxc_containers %}
+<h4 class="section-header" style="cursor: pointer; user-select: none;" onclick="toggleSection('lxc-table')">
+    <i class="ti ti-chevron-down" id="lxc-table-icon"></i> LXC Containers
+</h4>
+<table class="vm-table" id="lxc-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>VMID</th>
+            <th>Node</th>
+            <th>Status</th>
+            <th>IP Address</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for vm in lxc_containers %}
+        <tr data-vmid="{{ vm.vmid }}" data-category="lxc" data-node="{{ vm.node }}" data-vm-name="{{ vm.name|lower }}" data-vm-ip="{{ vm.ip|lower if vm.ip else '' }}">
+            <td><strong>{{ vm.name }}</strong></td>
+            <td>{{ vm.vmid }}</td>
+            <td>{{ vm.node }}</td>
+            <td>
+                <span class="badge {% if vm.status == 'running' %}badge-success{% elif vm.status == 'stopped' %}badge-danger{% else %}badge-secondary{% endif %}">
+                    {% if vm.status == 'running' %}● Running{% elif vm.status == 'stopped' %}● Stopped{% else %}● Unknown{% endif %}
+                </span>
+            </td>
+            <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+            <td>
+                <div class="action-buttons">
+                    <button class="btn-icon btn-icon-success btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="start"
+                            data-tooltip="Start Container"
+                            {% if vm.status == 'running' %}disabled{% endif %}>
+                        <i class="ti ti-player-play-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-danger btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="stop"
+                            data-tooltip="Stop Container"
+                            {% if vm.status == 'stopped' %}disabled{% endif %}>
+                        <i class="ti ti-player-stop-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-dark btn-ssh-web" 
+                            data-vmid="{{ vm.vmid }}"
+                            data-ip="{{ vm.ip or '' }}"
+                            data-name="{{ vm.name }}"
+                            data-tooltip="Open Web SSH Terminal"
+                            {% if not vm.ip %}disabled{% endif %}>
+                        <i class="ti ti-terminal"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-dark btn-ssh-copy" 
+                            data-vmid="{{ vm.vmid }}"
+                            data-ip="{{ vm.ip or '' }}"
+                            data-tooltip="Copy SSH Command"
+                            {% if not vm.ip %}disabled{% endif %}>
+                        <i class="ti ti-clipboard"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-info"
+                            onclick="openVMConsole({{ vm.vmid }}, '{{ vm.cluster_id }}')"
+                            data-tooltip="Web Console">
+                        <i class="ti ti-browser"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if other_vms %}
+<h4 class="section-header" style="cursor: pointer; user-select: none;" onclick="toggleSection('other-table')">
+    <i class="ti ti-chevron-down" id="other-table-icon"></i> Other / Unknown
+</h4>
+<table class="vm-table" id="other-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>VMID</th>
+            <th>Node</th>
+            <th>Status</th>
+            <th>IP Address</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for vm in other_vms %}
+        <tr data-vmid="{{ vm.vmid }}" data-category="other" data-node="{{ vm.node }}" data-vm-name="{{ vm.name|lower }}" data-vm-ip="{{ vm.ip|lower if vm.ip else '' }}">
+            <td><strong>{{ vm.name }}</strong></td>
+            <td>{{ vm.vmid }}</td>
+            <td>{{ vm.node }}</td>
+            <td>
+                <span class="badge {% if vm.status == 'running' %}badge-success{% elif vm.status == 'stopped' %}badge-danger{% else %}badge-secondary{% endif %}">
+                    {% if vm.status == 'running' %}● Running{% elif vm.status == 'stopped' %}● Stopped{% else %}● Unknown{% endif %}
+                </span>
+            </td>
+            <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+            <td>
+                <div class="action-buttons">
+                    <button class="btn-icon btn-icon-success btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="start"
+                            data-tooltip="Start"
+                            {% if vm.status == 'running' %}disabled{% endif %}>
+                        <i class="ti ti-player-play-filled"></i>
+                    </button>
+                    <button class="btn-icon btn-icon-danger btn-power" 
+                            data-vmid="{{ vm.vmid }}" 
+                            data-action="stop"
+                            data-tooltip="Stop"
+                            {% if vm.status == 'stopped' %}disabled{% endif %}>
+                        <i class="ti ti-player-stop-filled"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+</div><!-- End vm-tables-container -->
+
+<!-- Refresh Cache Button at bottom (Admin only) -->
+{% if is_admin %}
+<div style="margin-top: 3rem; padding: 2rem 0; border-top: 1px solid #e1dfdd; text-align: center;">
+    <button type="button" id="refresh-btn" class="btn-secondary" style="padding: 0.75rem 2rem; font-size: 14px;">
+        <i class="ti ti-refresh"></i> Refresh Cache
+    </button>
+    <button type="button" id="cleanup-btn" class="btn-secondary" style="padding: 0.75rem 2rem; font-size: 14px; margin-left: 0.5rem;">
+        <i class="ti ti-broom"></i> Sync & Clean
+    </button>
+    <p style="margin-top: 0.5rem; color: #605e5c; font-size: 12px;">Admin only: Force reload VM data from Proxmox server</p>
+</div>
+{% endif %}
+
+<script>
+// Store all VMs globally for filtering
+let allVMs = [];
+
+// Refresh cache function - defined early for immediate availability
+window.refreshVMs = async function() {
+    const btn = document.getElementById('refresh-btn');
+    if (!btn) return;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-refresh spin"></i> Refreshing...';
+    
+    try {
+        // Trigger force refresh
+        const resp = await fetch("/api/vms?force_refresh=true");
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        }
+        
+        const payload = await resp.json();
+        
+        // Update global VMs array
+        const data = Array.isArray(payload) ? payload : (payload.vms || []);
+        window.isAdminView = payload.is_admin || false;
+        allVMs = data;
+        
+        // Clear and repopulate tables with fresh data
+        if (typeof populateTables === 'function') {
+            populateTables(data);
+        }
+        
+        // Apply current filters
+        if (typeof applyFilters === 'function') {
+            applyFilters();
+        }
+        
+        // Show success message
+        console.log('Cache refreshed successfully, loaded', data.length, 'VMs');
+        
+        // Visual feedback
+        btn.innerHTML = '<i class="ti ti-circle-check"></i> Refreshed!';
+        setTimeout(() => {
+            btn.innerHTML = '<i class="ti ti-refresh"></i> Refresh Cache';
+        }, 2000);
+        
+    } catch (e) {
+        console.error('Refresh failed:', e);
+        alert('Failed to refresh cache: ' + e.message);
+        btn.innerHTML = '<i class="ti ti-circle-x"></i> Failed';
+        setTimeout(() => {
+            btn.innerHTML = '<i class="ti ti-refresh"></i> Refresh Cache';
+        }, 2000);
+    } finally {
+        btn.disabled = false;
+    }
+};
+
+// Sync inventory and clean orphaned assignments (admin only)
+window.syncAndClean = async function() {
+    const btn = document.getElementById('cleanup-btn');
+    if (!btn) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-broom"></i> Cleaning...';
+
+    try {
+        const resp = await fetch('/api/sync/cleanup', { method: 'POST' });
+        const payload = await resp.json();
+        
+        if (!resp.ok || !payload.ok) {
+            throw new Error(payload.error || `HTTP ${resp.status}`);
+        }
+
+        btn.innerHTML = '<i class="ti ti-circle-check"></i> Cleaned!';
+        
+        // Reload VMs
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await window.refreshVMs();
+    } catch (error) {
+        console.error('Sync & clean failed:', error);
+        btn.innerHTML = '<i class="ti ti-alert-triangle"></i> Failed';
+    } finally {
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }, 2000);
+    }
+};
+
+// Filter VMs by cluster (called from base.html dropdown)
+window.filterVMsByCluster = function(clusterId) {
+    console.log('filterVMsByCluster called with:', clusterId);
+    console.log('Total VMs available:', allVMs.length);
+    
+    if (allVMs.length === 0) {
+        console.warn('No VMs loaded yet, filtering will have no effect');
+        return;
+    }
+    
+    let filtered;
+    if (clusterId === 'all') {
+        filtered = allVMs;
+        console.log('Showing all VMs:', filtered.length);
+    } else {
+        filtered = allVMs.filter(vm => vm.cluster_id === clusterId);
+        console.log(`Filtered to cluster ${clusterId}:`, filtered.length, 'VMs');
+    }
+    
+    // Repopulate tables with filtered VMs (IPs are already loaded in allVMs)
+    populateTables(filtered);
+    
+    // Update summary tiles with filtered data
+    updateSummaryTiles(filtered);
+    
+    // Update node filter dropdown with filtered nodes
+    populateNodeFilter(filtered);
+    
+    console.log('Cluster filter applied successfully - no IP refetch needed');
+};
+
+// Populate node filter
+window.addEventListener('load', function() {
+    const nodes = new Set();
+    document.querySelectorAll('[data-node]').forEach(el => {
+        nodes.add(el.getAttribute('data-node'));
+    });
+    const nodeFilter = document.getElementById('node-filter');
+    nodes.forEach(node => {
+        const option = document.createElement('option');
+        option.value = node;
+        option.textContent = node;
+        nodeFilter.appendChild(option);
+    });
+});
+
+// Search and filter functionality with debounce
+let filterDebounceTimer = null;
+
+function applyFiltersDebounced() {
+    // Clear existing timer
+    if (filterDebounceTimer) {
+        clearTimeout(filterDebounceTimer);
+    }
+    // Apply immediately for dropdowns, debounce for text input
+    const isSearchInput = document.activeElement.id === 'search-input';
+    if (isSearchInput) {
+        // Debounce text input by 150ms
+        filterDebounceTimer = setTimeout(applyFilters, 150);
+    } else {
+        // Apply immediately for dropdown changes
+        applyFilters();
+    }
+}
+
+// Initialize filter event listeners after DOM is loaded
+function initializeFilterListeners() {
+    const searchInput = document.getElementById('search-input');
+    const categoryFilter = document.getElementById('category-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const nodeFilter = document.getElementById('node-filter');
+    
+    if (searchInput) {
+        searchInput.addEventListener('input', applyFiltersDebounced);
+        console.log('Search input listener attached');
+    }
+    if (categoryFilter) {
+        categoryFilter.addEventListener('change', applyFiltersDebounced);
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', applyFiltersDebounced);
+    }
+    if (nodeFilter) {
+        nodeFilter.addEventListener('change', applyFiltersDebounced);
+    }
+}
+
+// Toggle section visibility (collapse/expand tables)
+function toggleSection(tableId) {
+    const table = document.getElementById(tableId);
+    const icon = document.getElementById(tableId + '-icon');
+    
+    if (!table) {
+        console.error('Table not found:', tableId);
+        return;
+    }
+    
+    // Get the tbody to collapse/expand
+    const tbody = table.querySelector('tbody');
+    if (!tbody) {
+        console.error('Table tbody not found:', tableId);
+        return;
+    }
+    
+    // Check if tbody is currently visible
+    const isVisible = tbody.style.display !== 'none';
+    
+    if (isVisible) {
+        // Hide the tbody
+        tbody.style.display = 'none';
+        if (icon) icon.className = 'ti ti-chevron-right';
+    } else {
+        // Show the tbody
+        tbody.style.display = '';
+        if (icon) icon.className = 'ti ti-chevron-down';
+    }
+}
+
+function applyFilters() {
+    const searchInput = document.getElementById('search-input');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+    const categoryFilter = document.getElementById('category-filter') ? document.getElementById('category-filter').value : 'all';
+    const statusFilter = document.getElementById('status-filter') ? document.getElementById('status-filter').value : 'all';
+    const nodeFilter = document.getElementById('node-filter') ? document.getElementById('node-filter').value : 'all';
+    
+    console.log('Applying filters:', { searchTerm, categoryFilter, statusFilter, nodeFilter });
+    
+    let filteredCount = 0;
+    
+    document.querySelectorAll('.vm-table tbody tr').forEach(row => {
+        const vmid = row.getAttribute('data-vmid');
+        const category = row.getAttribute('data-category');
+        const node = row.getAttribute('data-node');
+        const vmName = row.getAttribute('data-vm-name') || '';
+        const vmIp = row.getAttribute('data-vm-ip') || '';
+        
+        // Get status from badge text - normalize and extract status
+        const statusBadge = row.querySelector('.badge');
+        let rowStatus = 'unknown';
+        if (statusBadge) {
+            const badgeText = statusBadge.textContent.toLowerCase().trim();
+            // Remove bullet point and whitespace, extract status
+            if (badgeText.indexOf('running') !== -1) {
+                rowStatus = 'running';
+            } else if (badgeText.indexOf('stopped') !== -1) {
+                rowStatus = 'stopped';
+            } else if (badgeText.indexOf('starting') !== -1) {
+                rowStatus = 'running'; // Treat "starting" as running for filter purposes
+            }
+        }
+        
+        // Search in name, VMID, and IP
+        const matchesSearch = !searchTerm || vmName.includes(searchTerm) || vmid.includes(searchTerm) || vmIp.includes(searchTerm);
+        const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
+        const matchesStatus = statusFilter === 'all' || rowStatus === statusFilter;
+        const matchesNode = nodeFilter === 'all' || node === nodeFilter;
+        
+        const shouldShow = matchesSearch && matchesCategory && matchesStatus && matchesNode;
+        row.style.display = shouldShow ? '' : 'none';
+        
+        if (shouldShow) filteredCount++;
+    });
+    
+    console.log('Filtered rows visible:', filteredCount);
+    
+    // Hide empty tables
+    document.querySelectorAll('.vm-table').forEach(table => {
+        const visibleRows = table.querySelectorAll('tbody tr[style=""]').length;
+        const header = table.previousElementSibling;
+        if (visibleRows === 0) {
+            table.style.display = 'none';
+            if (header && header.classList.contains('section-header')) {
+                header.style.display = 'none';
+            }
+        } else {
+            table.style.display = '';
+            if (header && header.classList.contains('section-header')) {
+                header.style.display = '';
+            }
+        }
+    });
+}
+
+// Load VMs initially (for progressive load)
+async function loadVMs() {
+    const loadingIndicator = document.getElementById('loading-indicator');
+    try {
+        // Check if we need to force refresh (cluster switch)
+        const urlParams = new URLSearchParams(window.location.search);
+        const forceRefresh = urlParams.get('force_refresh') === 'true';
+        // DB-first fetch (default behavior) - returns cached data immediately
+        const fetchUrl = forceRefresh ? '/api/vms?force_refresh=true' : '/api/vms';
+        let resp = await fetch(fetchUrl);
+        let useLiveFallback = false;
+        if (!resp.ok) {
+            useLiveFallback = true;
+        }
+        let payload = useLiveFallback ? [] : await resp.json();
+        let data = Array.isArray(payload) ? payload : (payload.vms || []);
+        const stale = !useLiveFallback && !!payload.stale;
+        window.isAdminView = payload.is_admin || false;  // Store admin flag globally
+        if (useLiveFallback) {
+            // Fallback to live Proxmox fetch if DB query failed
+            const liveUrl = '/api/vms?live=true';
+            resp = await fetch(liveUrl);
+            if (resp.ok) {
+                const fallbackPayload = await resp.json();
+                data = Array.isArray(fallbackPayload) ? fallbackPayload : (fallbackPayload.vms || []);
+                window.isAdminView = fallbackPayload.is_admin || false;
+            }
+        }
+        console.log('Initial VM load:', data.length, 'records (stale=', stale, ', fallback=', useLiveFallback, ', admin=', window.isAdminView, ')');
+        
+        // Store VMs globally for cluster filtering
+        allVMs = data;
+        
+        // Check if we need to filter by cluster
+        const selectedCluster = sessionStorage.getItem('selected_cluster');
+        const vmsToDisplay = selectedCluster && selectedCluster !== 'all'
+            ? data.filter(vm => vm.cluster_id === selectedCluster)
+            : data;
+        
+        console.log('Displaying', vmsToDisplay.length, 'VMs (filtered by:', selectedCluster || 'none', ')');
+        
+        // Restore dropdown selection if exists
+        if (selectedCluster) {
+            const dropdown = document.getElementById('cluster-select');
+            if (dropdown) {
+                dropdown.value = selectedCluster;
+                console.log('Restored dropdown selection:', selectedCluster);
+            }
+        }
+        
+        // If inventory stale, a background refresh thread is running server-side
+        if (stale) {
+            const staleBanner = document.createElement('div');
+            staleBanner.className = 'page-banner';
+            staleBanner.textContent = 'Inventory is refreshing in background...';
+            document.querySelector('.page-header').appendChild(staleBanner);
+            setTimeout(() => staleBanner.remove(), 8000);
+        }
+        
+        // If tables are empty OR force refresh (cluster switch), populate them
+        if (document.querySelectorAll('.vm-table tbody tr').length === 0 || forceRefresh) {
+            populateTables(vmsToDisplay);
+            updateSummaryTiles(vmsToDisplay);
+            populateNodeFilter(vmsToDisplay);
+            // Apply filters after initial load to respect any pre-filled search terms
+            setTimeout(() => applyFilters(), 100);
+        }
+        
+        if (loadingIndicator) loadingIndicator.remove();
+        
+        // IPs are now fetched on initial load, no need for background fetch
+    } catch (e) {
+        console.error('Failed to load VMs:', e);
+        if (loadingIndicator) loadingIndicator.remove();
+    }
+}
+
+async function fetchIPsInBackground() {
+    console.log('Fetching IPs in background...');
+    
+    // Update cells showing 'Fetching...' to 'Checking...'
+    document.querySelectorAll('.vm-ip').forEach(cell => {
+        if (cell.textContent === 'Fetching...') {
+            cell.textContent = 'Checking...';
+        }
+    });
+    
+    try {
+        // Fetch VMs with IPs (slow but runs in background after page loads)
+        const resp = await fetch("/api/vms");
+        if (!resp.ok) {
+            console.error('Failed to fetch IPs, status:', resp.status);
+            return;
+        }
+        const data = await resp.json();
+        console.log('Received VM data with IPs:', data.length, 'VMs');
+        updateVMsFromData(data);
+        console.log('Updated VM IPs in UI');
+    } catch (e) {
+        console.error('Failed to fetch IPs:', e);
+    }
+}
+
+function populateTables(vms) {
+    const container = document.getElementById('vm-tables-container');
+    const categories = {
+        windows: { title: 'Windows VMs', vms: [] },
+        linux: { title: 'Linux VMs', vms: [] },
+        lxc: { title: 'LXC Containers', vms: [] },
+        other: { title: 'Other / Unknown', vms: [] }
+    };
+    
+    vms.forEach(vm => {
+        const cat = vm.type === 'lxc' ? 'lxc' : vm.category || 'other';
+        if (categories[cat]) {
+            categories[cat].vms.push(vm);
+        }
+    });
+    
+    container.innerHTML = '';
+    
+    Object.entries(categories).forEach(([cat, data]) => {
+        if (data.vms.length === 0) return;
+        
+        const header = document.createElement('h4');
+        header.className = 'section-header';
+        header.style.cursor = 'pointer';
+        header.style.userSelect = 'none';
+        header.onclick = () => toggleSection(`${cat}-table`);
+        
+        const icon = document.createElement('i');
+        icon.className = 'ti ti-chevron-down';
+        icon.id = `${cat}-table-icon`;
+        
+        header.appendChild(icon);
+        header.appendChild(document.createTextNode(' ' + data.title));
+        container.appendChild(header);
+        
+        const table = document.createElement('table');
+        table.className = 'vm-table';
+        table.id = `${cat}-table`;
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>VMID</th>
+                    <th>Node</th>
+                    <th>Cluster</th>
+                    <th>Status</th>
+                    <th>IP Address</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        `;
+        
+        const tbody = table.querySelector('tbody');
+        data.vms.forEach(vm => {
+            tbody.appendChild(createVMRow(vm, cat));
+        });
+        
+        container.appendChild(table);
+    });
+    
+    // Update summary tiles
+    updateSummaryTiles(vms);
+    
+    // Populate node filter dropdown
+    populateNodeFilter(vms);
+}
+
+function populateNodeFilter(vms) {
+    const nodeFilter = document.getElementById('node-filter');
+    
+    // Get unique nodes from VMs
+    const nodes = new Set();
+    vms.forEach(vm => {
+        if (vm.node) {
+            nodes.add(vm.node);
+        }
+    });
+    
+    // Clear existing options except "All Nodes"
+    nodeFilter.innerHTML = '<option value="all">All Nodes</option>';
+    
+    // Add option for each node
+    Array.from(nodes).sort().forEach(node => {
+        const option = document.createElement('option');
+        option.value = node;
+        option.textContent = node;
+        nodeFilter.appendChild(option);
+    });
+}
+
+function createVMRow(vm, category) {
+    const row = document.createElement('tr');
+    row.setAttribute('data-vmid', vm.vmid);
+    row.setAttribute('data-category', category);
+    row.setAttribute('data-node', vm.node);
+    row.setAttribute('data-vm-name', (vm.name || '').toLowerCase());
+    row.setAttribute('data-vm-ip', (vm.ip || '').toLowerCase());
+    
+    const statusClass = vm.status === 'running' ? 'badge-success' : vm.status === 'stopped' ? 'badge-danger' : 'badge-secondary';
+    const statusText = vm.status === 'running' ? '● Running' : vm.status === 'stopped' ? '● Stopped' : '● Unknown';
+    
+    const isWindows = category === 'windows';
+    const isLinux = category === 'linux' || category === 'lxc';
+    const hasRdp = isWindows || vm.rdp_available === true;  // Show RDP for all Windows VMs or if port 3389 is open
+    
+    // Add RDP icon if IP is available (desktop PC icon for VMs with RDP/IP)
+    const hasValidIP = vm.ip && vm.ip !== 'N/A' && vm.ip !== 'Fetching...' && vm.ip.trim() !== '';
+    console.log(`VM ${vm.name}: IP="${vm.ip}", hasValidIP=${hasValidIP}`); // Debug logging
+    const rdpIcon = hasValidIP ? ' <i class="ti ti-device-desktop" style="margin-left: 0.5rem; color: #0078d4; font-size: 16px;" title="RDP Available"></i>' : '';
+    
+    row.innerHTML = `
+        <td><strong>${vm.name}</strong>${rdpIcon}</td>
+        <td>${vm.vmid}</td>
+        <td>${vm.node}</td>
+        <td><span class="vm-cluster-badge" title="${vm.cluster_name || 'Unknown'}">${vm.cluster_name || 'N/A'}</span></td>
+        <td>
+            <span class="badge ${statusClass}">${statusText}</span>
+        </td>
+        <td class="vm-ip"${vm.ip === 'Fetching...' ? ' style="font-style: italic; color: #858585;"' : ''}>${vm.ip || 'N/A'}</td>
+        <td>
+            ${(window.isAdminView && vm.mapped_to) ? `<div style="font-size: 12px; color: #605e5c; margin-bottom: 6px;"><i class="ti ti-user"></i> Mapped to: <strong>${vm.mapped_to}</strong></div>` : ''}
+            <div class="action-buttons">
+                <button class="btn-icon btn-icon-success btn-power" 
+                        data-vmid="${vm.vmid}" 
+                        data-action="start"
+                        data-tooltip="Start VM"
+                        ${vm.status === 'running' ? 'disabled' : ''}>
+                    <i class="ti ti-power"></i>
+                </button>
+                <button class="btn-icon btn-icon-danger btn-power" 
+                        data-vmid="${vm.vmid}" 
+                        data-action="stop"
+                        data-tooltip="Stop VM"
+                        ${vm.status === 'stopped' ? 'disabled' : ''}>
+                    <i class="ti ti-circle-off"></i>
+                </button>
+                ${isLinux ? `
+                <button class="btn-icon btn-icon-dark btn-ssh-web" 
+                        data-vmid="${vm.vmid}"
+                        data-ip="${vm.ip || ''}"
+                        data-name="${vm.name}"
+                        data-tooltip="SSH Terminal"
+                        ${!vm.ip ? 'disabled' : ''}>
+                    <i class="ti ti-terminal-2"></i>
+                </button>
+                <button class="btn-icon btn-icon-dark btn-ssh-copy" 
+                        data-vmid="${vm.vmid}"
+                        data-ip="${vm.ip || ''}"
+                        data-tooltip="Copy SSH"
+                        ${!vm.ip ? 'disabled' : ''}>
+                    <i class="ti ti-clipboard-data"></i>
+                </button>
+                ` : ''}
+                ${vm.type === 'qemu' ? `
+                <button class="btn-icon btn-icon-info"
+                        onclick="openVMConsole(${vm.vmid}, '${vm.cluster_id}')"
+                        data-tooltip="Web Console (VNC)">
+                    <i class="ti ti-browser"></i>
+                </button>
+                ` : ''}
+                ${hasRdp ? `
+                <a class="btn-icon btn-icon-primary" 
+                   href="/rdp/${vm.vmid}.rdp"
+                   data-tooltip="RDP File">
+                    <i class="ti ti-file-download"></i>
+                </a>
+                ` : ''}
+            </div>
+        </td>
+    `;
+    
+    return row;
+}
+
+// Refresh VM status
+async function refreshVmStatus() {
+    // Skip refresh if page is not visible (tab is in background)
+    if (document.hidden) {
+        console.log('Page hidden, skipping status refresh');
+        return;
+    }
+    
+    try {
+        const resp = await fetch("/api/vms");
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        const list = Array.isArray(payload) ? payload : (payload.vms || []);
+        window.isAdminView = payload.is_admin || false;
+        updateVMsFromData(list);
+    } catch (e) {
+        console.error('Failed to refresh:', e);
+    }
+}
+
+// Refresh single VM status (more efficient after power actions)
+async function refreshSingleVMStatus(vmid, skipIp = false) {
+    try {
+        // Fetch IP by default since status changes often affect network
+        const url = `/api/vm/${vmid}/status`;
+        const resp = await fetch(url);
+        if (!resp.ok) return;
+        const vm = await resp.json();
+        
+        // Update just this VM in the UI (updates status badges and button states)
+        const existingVm = allVMs.find(v => v.vmid === vmid);
+        if (existingVm) {
+            // Keep existing IP if we skipped lookup
+            if (skipIp && existingVm.ip) {
+                vm.ip = existingVm.ip;
+            }
+            // Update the VM in allVMs array
+            Object.assign(existingVm, vm);
+        }
+        
+        // Re-render the tables with updated data
+        populateTables(allVMs);
+    } catch (e) {
+        console.error('Failed to refresh single VM:', e);
+        // Fallback to full refresh if single refresh fails
+        refreshVmStatus();
+    }
+}
+
+function updateVMsFromData(data) {
+    data.forEach(vm => {
+        const row = document.querySelector(`tr[data-vmid="${vm.vmid}"]`);
+        if (!row) return;
+
+        // Update status badge
+        const badge = row.querySelector('.badge');
+        if (badge) {
+            const currentBadge = badge.textContent;
+            const hasIP = vm.ip && vm.ip !== 'Fetching...' && vm.ip !== 'N/A';
+            
+            // If VM is running but no IP yet, show "Starting..." 
+            // Keep "Starting..." until IP is found
+            if (vm.status === 'running' && !hasIP && (currentBadge.includes('Starting') || !currentBadge.includes('Running'))) {
+                badge.className = 'badge badge-secondary';
+                badge.textContent = '● Starting...';
+            } else {
+                // Normal status update
+                badge.className = 'badge';
+                badge.classList.add(vm.status === 'running' ? 'badge-success' : 
+                                  vm.status === 'stopped' ? 'badge-danger' : 'badge-secondary');
+                badge.textContent = vm.status === 'running' ? '● Running' :
+                                   vm.status === 'stopped' ? '● Stopped' : '● Unknown';
+            }
+        }
+
+        // Update IP with status indicator
+        const ipCell = row.querySelector('.vm-ip');
+        if (ipCell) {
+            const currentText = ipCell.textContent;
+            if (vm.ip && vm.ip !== 'Fetching...' && vm.ip !== 'N/A') {
+                // Valid IP address - now we can show "Running"
+                ipCell.textContent = vm.ip;
+                ipCell.style.fontStyle = 'normal';
+                ipCell.style.color = '';
+                
+                // If we just got an IP and VM is running, update badge to "Running"
+                const badge = row.querySelector('.badge');
+                if (badge && badge.textContent.includes('Starting') && vm.status === 'running') {
+                    badge.className = 'badge badge-success';
+                    badge.textContent = '● Running';
+                }
+            } else if (vm.ip === 'Fetching...' || currentText === 'Fetching...') {
+                // Show fetching status
+                ipCell.textContent = 'Fetching...';
+                ipCell.style.fontStyle = 'italic';
+                ipCell.style.color = '#858585';
+            } else {
+                // No IP available
+                ipCell.textContent = 'N/A';
+                ipCell.style.fontStyle = 'normal';
+                ipCell.style.color = '';
+            }
+        }
+
+        // Update power buttons
+        const startBtn = row.querySelector('.btn-power[data-action="start"]');
+        const stopBtn = row.querySelector('.btn-power[data-action="stop"]');
+        if (startBtn) startBtn.disabled = vm.status === 'running';
+        if (stopBtn) stopBtn.disabled = vm.status === 'stopped';
+
+        // Update SSH buttons
+        row.querySelectorAll('.btn-ssh-web, .btn-ssh-copy').forEach(btn => {
+            btn.disabled = !vm.ip;
+            if (vm.ip) {
+                btn.setAttribute('data-ip', vm.ip);
+            }
+        });
+    });
+    
+    // Update summary tiles
+    updateSummaryTiles(data);
+}
+
+function updateSummaryTiles(vms) {
+    const windows = vms.filter(v => v.category === 'windows');
+    // Linux = category 'linux' AND type 'qemu' (exclude LXC)
+    const linux = vms.filter(v => v.category === 'linux' && v.type === 'qemu');
+    // LXC = type 'lxc' (regardless of category)
+    const lxc = vms.filter(v => v.type === 'lxc');
+    
+    document.getElementById('windows-count').textContent = windows.length;
+    document.getElementById('windows-running').textContent = windows.filter(v => v.status === 'running').length + ' running';
+    
+    document.getElementById('linux-count').textContent = linux.length;
+    document.getElementById('linux-running').textContent = linux.filter(v => v.status === 'running').length + ' running';
+    
+    document.getElementById('lxc-count').textContent = lxc.length;
+    document.getElementById('lxc-running').textContent = lxc.filter(v => v.status === 'running').length + ' running';
+}
+
+// Power actions
+async function sendPowerAction(vmid, action, btn) {
+    const icon = btn.querySelector('i');
+    const originalIcon = icon.className;
+    
+    try {
+        // Set pending state (grey button with spinner)
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        icon.className = 'ti ti-hourglass';
+        
+        const resp = await fetch(`/api/vm/${vmid}/${action}`, { 
+            method: "POST",
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        
+        if (!resp.ok || !data.ok) {
+            // Show error state (red X)
+            btn.classList.remove('btn-icon-success', 'btn-icon-danger');
+            btn.classList.add('btn-icon-error');
+            icon.className = 'ti ti-circle-x-filled';
+            btn.style.opacity = '1';
+            
+            // Log error for debugging
+            console.error("Power action failed:", data.error || 'Unknown error');
+            
+            // Revert to original after 3 seconds
+            setTimeout(() => {
+                icon.className = originalIcon;
+                btn.classList.remove('btn-icon-error');
+                if (action === 'start') {
+                    btn.classList.add('btn-icon-success');
+                } else {
+                    btn.classList.add('btn-icon-danger');
+                }
+                btn.style.opacity = '';
+                btn.disabled = false;
+            }, 3000);
+            
+            return;
+        }
+        
+        // Success - update to intermediate state immediately
+        const row = document.querySelector(`tr[data-vmid="${vmid}"]`);
+        if (row) {
+            const badge = row.querySelector('.badge');
+            if (badge && action === 'start') {
+                badge.className = 'badge badge-secondary';
+                badge.textContent = '● Starting...';
+            } else if (badge && action === 'stop') {
+                badge.className = 'badge badge-secondary';
+                badge.textContent = '● Stopping...';
+            }
+        }
+        
+        // Revert button icon
+        icon.className = originalIcon;
+        btn.style.opacity = '';
+        btn.disabled = false;
+        
+        // Start accelerated polling for IP discovery after VM start
+        if (action === 'start') {
+            startAcceleratedPolling(vmid);
+        } else {
+            // For stop, just refresh once after 2 seconds
+            setTimeout(() => {
+                refreshSingleVMStatus(vmid, true); // true = skip IP lookup
+            }, 2000);
+        }
+        
+    } catch (e) {
+        console.error("Power action exception:", e);
+        
+        // Show error state
+        btn.classList.remove('btn-icon-success', 'btn-icon-danger');
+        btn.classList.add('btn-icon-error');
+        icon.className = 'ti ti-circle-x-filled';
+        btn.style.opacity = '1';
+        
+        // Revert after 3 seconds
+        setTimeout(() => {
+            icon.className = originalIcon;
+            btn.classList.remove('btn-icon-error');
+            if (action === 'start') {
+                btn.classList.add('btn-icon-success');
+            } else {
+                btn.classList.add('btn-icon-danger');
+            }
+            btn.style.opacity = '';
+            btn.disabled = false;
+        }, 3000);
+    }
+}
+
+// Event listeners
+let statusPollInterval = null;
+let lastUserActivity = Date.now();
+
+// Track user activity to adjust polling frequency
+function updateUserActivity() {
+    lastUserActivity = Date.now();
+}
+
+document.addEventListener('mousedown', updateUserActivity);
+document.addEventListener('keydown', updateUserActivity);
+
+// Smart polling - adjust rate based on page visibility and user activity
+function startSmartPolling() {
+    if (statusPollInterval) {
+        clearInterval(statusPollInterval);
+    }
+    
+    // Poll every 30 seconds instead of 15 (reduce by 50%)
+    // Skip polling when page is hidden
+    statusPollInterval = setInterval(() => {
+        if (!document.hidden) {
+            refreshVmStatus();
+        }
+    }, 30000);
+}
+
+// Accelerated polling after VM start (2s, 5s, 10s, then back to normal)
+function startAcceleratedPolling(vmid) {
+    console.log(`Starting accelerated polling for VM ${vmid} to catch IP quickly`);
+    
+    // Poll at 2s, 5s, 10s after start
+    setTimeout(() => refreshSingleVMStatus(vmid), 2000);
+    setTimeout(() => refreshSingleVMStatus(vmid), 5000);
+    setTimeout(() => refreshSingleVMStatus(vmid), 10000);
+}
+
+// Resume polling when page becomes visible
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        console.log('Page visible, refreshing status');
+        refreshVmStatus();
+    }
+});
+
+window.addEventListener("load", function () {
+    const progressiveLoad = {{ 'true' if progressive_load else 'false' }};
+    
+    // Initialize filter event listeners
+    initializeFilterListeners();
+    
+    // Attach refresh button handler
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', window.refreshVMs);
+    }
+    
+    if (progressiveLoad) {
+        // Load VMs immediately for progressive load
+        loadVMs();
+    } else {
+        // Just refresh status for pre-loaded VMs
+        setTimeout(refreshVmStatus, 500);
+    }
+    
+    // Start smart polling
+    startSmartPolling();
+
+    // Power button clicks
+    document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".btn-power");
+        if (!btn) return;
+        const vmid = btn.getAttribute("data-vmid");
+        const action = btn.getAttribute("data-action");
+        if (!vmid || !action) return;
+        sendPowerAction(vmid, action, btn);
+    });
+
+    // SSH copy button
+    document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".btn-ssh-copy");
+        if (!btn || btn.disabled) return;
+        const ip = btn.getAttribute("data-ip");
+        if (!ip) return;
+        
+        const sshCommand = `ssh root@${ip}`;
+        navigator.clipboard.writeText(sshCommand).then(() => {
+            const icon = btn.querySelector('i');
+            icon.className = 'ti ti-check';
+            setTimeout(() => {
+                icon.className = 'ti ti-clipboard';
+            }, 2000);
+        }).catch(() => {
+            alert(`SSH command:\n${sshCommand}`);
+        });
+    });
+
+    // Web SSH button
+    document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".btn-ssh-web");
+        if (!btn || btn.disabled) return;
+        const vmid = btn.getAttribute("data-vmid");
+        const ip = btn.getAttribute("data-ip");
+        const name = btn.getAttribute("data-name");
+        if (!ip || !vmid) return;
+        
+        const width = 1000;
+        const height = 600;
+        const left = (screen.width - width) / 2;
+        const top = (screen.height - height) / 2;
+        window.open(
+            `/ssh/${vmid}?ip=${encodeURIComponent(ip)}&name=${encodeURIComponent(name)}`,
+            `ssh-${vmid}`,
+            `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,toolbar=no,menubar=no`
+        );
+    });
+
+    // Open VM Console (noVNC)
+    window.openVMConsole = async function(vmid, clusterId) {
+        try {
+            // Open console directly - no API call needed, pass cluster_id
+            const width = 1280;
+            const height = 800;
+            const left = (screen.width - width) / 2;
+            const top = (screen.height - height) / 2;
+            const url = clusterId ? `/api/console/${vmid}/view2?cluster_id=${clusterId}` : `/api/console/${vmid}/view2`;
+            window.open(
+                url,
+                `console-${vmid}`,
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no`
+            );
+        } catch (error) {
+            console.error('Failed to open console:', error);
+            alert('Failed to open console: ' + error.message);
+        }
+    };
+});
+</script>
+
+{% endblock %}

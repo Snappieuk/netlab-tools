@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH - {{ vm_name }}</title>
+    <!-- xterm.js CSS (self-hosted) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm/xterm.min.css') }}">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            overflow: hidden;
+        }
+        #header {
+            background: #2d2d30;
+            padding: 8px 16px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        #header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        #vm-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        #vm-ip {
+            font-size: 12px;
+            color: #858585;
+        }
+        #status {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 3px;
+            background: #3a3d41;
+        }
+        #status.connected {
+            background: #1a7f37;
+            color: white;
+        }
+        #status.error {
+            background: #a1260d;
+            color: white;
+        }
+        #terminal-container {
+            position: absolute;
+            top: 40px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 8px;
+        }
+        #login-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        #login-modal.hidden {
+            display: none;
+        }
+        .modal-content {
+            background: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-radius: 6px;
+            padding: 24px;
+            width: 360px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+        .modal-content h2 {
+            margin: 0 0 20px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #d4d4d4;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            margin-bottom: 6px;
+            color: #d4d4d4;
+        }
+        .form-group input {
+            width: 100%;
+            background: #3c3c3c;
+            border: 1px solid #5a5a5a;
+            color: #d4d4d4;
+            padding: 8px 12px;
+            border-radius: 3px;
+            font-size: 13px;
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+            box-sizing: border-box;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #007acc;
+            background: #454545;
+        }
+        .button-group {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 3px;
+            font-size: 13px;
+            cursor: pointer;
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+            border: none;
+        }
+        .btn-primary {
+            background: #0e639c;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #1177bb;
+        }
+        .btn-primary:disabled {
+            background: #3a3d41;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .btn-secondary {
+            background: #3a3d41;
+            color: #d4d4d4;
+        }
+        .btn-secondary:hover {
+            background: #4a4d51;
+        }
+        .error-message {
+            color: #f48771;
+            font-size: 12px;
+            margin-top: 8px;
+            display: none;
+        }
+        .error-message.show {
+            display: block;
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+        }
+        .xterm {
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div id="header-left">
+            <span id="vm-name">{{ vm_name }}</span>
+            <span id="vm-ip">{{ ip }}</span>
+        </div>
+        <span id="status">Ready</span>
+    </div>
+    
+    <div id="login-modal">
+        <div class="modal-content">
+            <h2>SSH Login</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="ssh-username">Username</label>
+                    <input id="ssh-username" type="text" autocomplete="username" placeholder="Enter username" required>
+                </div>
+                <div class="form-group">
+                    <label for="ssh-password">Password</label>
+                    <input id="ssh-password" type="password" autocomplete="current-password" placeholder="Enter password" required>
+                </div>
+                <div class="error-message" id="error-message"></div>
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="cancel-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="connect-btn">Connect</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="terminal-container">
+        <div id="terminal"></div>
+    </div>
+
+    <!-- xterm.js scripts (self-hosted) -->
+    <script src="{{ url_for('static', filename='vendor/xterm/xterm.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/xterm/xterm-addon-fit.min.js') }}"></script>
+    <script>
+        // Check if xterm.js loaded
+        if (typeof Terminal === 'undefined') {
+            // Hide login modal if library failed to load
+            document.getElementById('login-modal').style.display = 'none';
+            document.getElementById('terminal').innerHTML = '<div style="padding: 20px; color: #e74c3c;">' +
+                '<h2>⚠ SSH Terminal Unavailable</h2>' +
+                '<p>Failed to load terminal library. Please check your internet connection.</p>' +
+                '<p>Alternatively, use RDP to connect to your VM.</p>' +
+                '</div>';
+        } else {
+            // Original xterm.js initialization code
+            const term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: '"Cascadia Code", "Consolas", "Courier New", monospace',
+            theme: {
+                background: '#1e1e1e',
+                foreground: '#d4d4d4',
+                cursor: '#ffffff',
+                black: '#000000',
+                red: '#cd3131',
+                green: '#0dbc79',
+                yellow: '#e5e510',
+                blue: '#2472c8',
+                magenta: '#bc3fbc',
+                cyan: '#11a8cd',
+                white: '#e5e5e5',
+                brightBlack: '#666666',
+                brightRed: '#f14c4c',
+                brightGreen: '#23d18b',
+                brightYellow: '#f5f543',
+                brightBlue: '#3b8eea',
+                brightMagenta: '#d670d6',
+                brightCyan: '#29b8db',
+                brightWhite: '#e5e5e5'
+            }
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'resize',
+                    width: term.cols,
+                    height: term.rows
+                }));
+            }
+        });
+
+        const vmid = {{ vmid }};
+        const ip = '{{ ip }}';
+        
+        const status = document.getElementById('status');
+        const modal = document.getElementById('login-modal');
+        const loginForm = document.getElementById('login-form');
+        const usernameInput = document.getElementById('ssh-username');
+        const passwordInput = document.getElementById('ssh-password');
+        const connectBtn = document.getElementById('connect-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const errorMessage = document.getElementById('error-message');
+        let ws = null;
+
+        function connect(username, password) {
+            modal.classList.add('hidden');
+            
+            // Determine WebSocket protocol and host
+            // Use current page's protocol/host to work through reverse proxies
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            
+            // Build WebSocket URL using current hostname to work with reverse proxy
+            // This ensures the WebSocket goes through the same proxy as HTTP requests
+            const wsUrl = `${protocol}//${window.location.host}/ws/ssh/${vmid}?ip=${encodeURIComponent(ip)}`;
+            
+            console.log('Attempting WebSocket connection to:', wsUrl);
+            console.log('Using protocol:', protocol, 'from window.location.protocol:', window.location.protocol);
+            
+            status.textContent = 'Connecting...';
+            status.className = '';
+            
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (e) {
+                console.error('Failed to create WebSocket:', e);
+                status.textContent = 'Connection failed: ' + e.message;
+                status.className = 'error';
+                showLoginModal();
+                return;
+            }
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected, sending credentials');
+                // Send credentials as first message (not in URL for security)
+                ws.send(JSON.stringify({
+                    username: username,
+                    password: password
+                }));
+                
+                status.textContent = 'Authenticating...';
+                status.className = '';
+                term.focus();
+            };
+            
+            let authenticated = false;
+            ws.onmessage = (event) => {
+                console.log('WebSocket message received:', event.data.substring(0, 100));
+                if (typeof event.data === 'string') {
+                    term.write(event.data);
+                    // Update status on first data (connection successful)
+                    if (!authenticated) {
+                        authenticated = true;
+                        status.textContent = 'Connected';
+                        status.className = 'connected';
+                        console.log('SSH authenticated successfully');
+                        // Send initial terminal size
+                        ws.send(JSON.stringify({
+                            type: 'resize',
+                            width: term.cols,
+                            height: term.rows
+                        }));
+                    }
+                }
+            };
+            
+            ws.onerror = (error) => {
+                status.textContent = 'Connection error - Check WebSocket availability';
+                status.className = 'error';
+                console.error('WebSocket error:', error);
+                console.error('Connection details:', {
+                    url: wsUrl,
+                    host: window.location.host,
+                    protocol: window.location.protocol,
+                    port: window.location.port
+                });
+                
+                // Show helpful error message for proxy issues
+                term.write('\r\n\x1b[1;31m╔══════════════════════════════════════════════════════════╗\x1b[0m\r\n');
+                term.write('\x1b[1;31m║  WebSocket Connection Failed                            ║\x1b[0m\r\n');
+                term.write('\x1b[1;31m╠══════════════════════════════════════════════════════════╣\x1b[0m\r\n');
+                term.write(`\x1b[1;33m║  URL: ${wsUrl.padEnd(52)}║\x1b[0m\r\n`);
+                term.write('\x1b[1;33m║                                                          ║\x1b[0m\r\n');
+                term.write('\x1b[1;33m║  Possible causes:                                        ║\x1b[0m\r\n');
+                term.write('\x1b[0m║  1. flask-sock package not installed on server          ║\x1b[0m\r\n');
+                term.write('\x1b[0m║  2. Firewall blocking WebSocket connections             ║\x1b[0m\r\n');
+                term.write('\x1b[0m║  3. Proxy not configured for WebSocket upgrade          ║\x1b[0m\r\n');
+                term.write('\x1b[0m║                                                          ║\x1b[0m\r\n');
+                term.write('\x1b[0m║  If using nginx reverse proxy, add this config:         ║\x1b[0m\r\n');
+                term.write('\x1b[0m║                                                          ║\x1b[0m\r\n');
+                term.write('\x1b[0m║    location /ws/ {                                       ║\x1b[0m\r\n');
+                term.write('\x1b[0m║      proxy_pass http://localhost:8080;                  ║\x1b[0m\r\n');
+                term.write('\x1b[0m║      proxy_http_version 1.1;                            ║\x1b[0m\r\n');
+                term.write('\x1b[0m║      proxy_set_header Upgrade $http_upgrade;            ║\x1b[0m\r\n');
+                term.write('\x1b[0m║      proxy_set_header Connection "upgrade";             ║\x1b[0m\r\n');
+                term.write('\x1b[0m║      proxy_set_header Host $host;                       ║\x1b[0m\r\n');
+                term.write('\x1b[0m║      proxy_set_header X-Real-IP $remote_addr;           ║\x1b[0m\r\n');
+                term.write('\x1b[0m║    }                                                     ║\x1b[0m\r\n');
+                term.write('\x1b[0m║                                                          ║\x1b[0m\r\n');
+                term.write('\x1b[1;33m║  Alternative: Use RDP connection instead                ║\x1b[0m\r\n');
+                term.write('\x1b[1;31m╚══════════════════════════════════════════════════════════╝\x1b[0m\r\n');
+            };
+            
+            ws.onclose = (event) => {
+                status.textContent = 'Disconnected';
+                status.className = 'error';
+                console.log('WebSocket closed:', {code: event.code, reason: event.reason, wasClean: event.wasClean});
+                term.write('\r\n\x1b[1;31mConnection closed\x1b[0m\r\n');
+                if (event.reason) {
+                    term.write(`\r\nReason: ${event.reason}\r\n`);
+                } else if (event.code === 1006) {
+                    term.write('\r\nPossible causes:\r\n');
+                    term.write('- flask-sock not installed (run: pip install flask-sock)\r\n');
+                    term.write('- WebSocket route not registered\r\n');
+                    term.write('- Server error during connection\r\n');
+                }
+                // Show modal again on disconnect
+                setTimeout(() => {
+                    modal.classList.remove('hidden');
+                    passwordInput.value = '';
+                    errorMessage.textContent = 'Connection lost. Please reconnect.';
+                    errorMessage.classList.add('show');
+                }, 1000);
+            };
+            
+            term.onData(data => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'input', data: data }));
+                }
+            });
+        }
+
+        // Form submit handler
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value;
+            
+            if (!username || !password) {
+                errorMessage.textContent = 'Please enter both username and password';
+                errorMessage.classList.add('show');
+                return;
+            }
+            
+            errorMessage.classList.remove('show');
+            connectBtn.disabled = true;
+            
+            connect(username, password);
+        });
+        
+        // Cancel button
+        cancelBtn.addEventListener('click', () => {
+            window.close();
+        });
+        
+        // Focus username input on load
+        usernameInput.focus();
+        } // End of xterm.js check
+    </script>
+</body>
+</html>
