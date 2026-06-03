@@ -1,0 +1,752 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: 16px;">
+    <div>
+        <h1><i class="ti ti-circle-plus"></i> Create New Class</h1>
+        <p class="page-subtitle">Set up a new lab class with customized VMs</p>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 340px; gap: 20px; max-width: 1400px; margin: 0 auto;">
+    <!-- Left Column: Form -->
+    <div>
+        <form id="create-class-form" style="margin-bottom: 0;">
+            <!-- Section 1: Class Details -->
+            <div class="form-card-section">
+                <div class="form-card-header">
+                    <h3 class="form-card-title"><i class="ti ti-info-circle"></i> Class Details</h3>
+                </div>
+                <div class="form-card-body" style="padding: 12px 20px;">
+                    <div class="form-group-compact">
+                        <label for="class-name">Class Name *</label>
+                        <input type="text" id="class-name" name="name" required 
+                               placeholder="e.g., Introduction to Linux" maxlength="120">
+                        <span class="form-help-compact">A descriptive name for your class</span>
+                    </div>
+                    
+                    <div class="form-group-compact">
+                        <label for="class-description">Description</label>
+                        <textarea id="class-description" name="description" rows="2"
+                                  placeholder="Brief description of this class..."></textarea>
+                        <span class="form-help-compact">Optional description visible to students</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Section 2: Deployment Settings -->
+            <div class="form-card-section">
+                <div class="form-card-header">
+                    <h3 class="form-card-title"><i class="ti ti-cloud-upload"></i> Deployment Settings</h3>
+                </div>
+                <div class="form-card-body" style="padding: 12px 20px;">
+                    <div class="form-group-compact">
+                        <label for="deployment-cluster">Cluster *</label>
+                        <select id="deployment-cluster" name="deployment_cluster">
+                            <option value="">Loading clusters...</option>
+                        </select>
+                        <span class="form-help-compact">Select which Proxmox cluster to deploy to</span>
+                    </div>
+                    
+                    <div class="form-group-compact">
+                        <label for="template-select">Template</label>
+                        <select id="template-select" name="template_id">
+                            <option value="">Select cluster first...</option>
+                        </select>
+                        <span class="form-help-compact">Select a template or "None" for empty VMs</span>
+                    </div>
+                    
+                    <div class="form-group-compact">
+                        <label for="deployment-node">Node (Optional)</label>
+                        <select id="deployment-node" name="deployment_node">
+                            <option value="">Auto-distribute (recommended)</option>
+                        </select>
+                        <span class="form-help-compact">Leave empty to distribute across all nodes</span>
+                    </div>
+                    
+                    <div class="form-group-compact">
+                        <label for="deployment-method">Deployment Method</label>
+                        <select id="deployment-method" name="deployment_method">
+                            <option value="config_clone">Config Clone (Recommended)</option>
+                            <option value="linked_clone">Linked Clone (Fast)</option>
+                        </select>
+                        <span class="form-help-compact">Config Clone: flexible, slower | Linked Clone: simple, faster</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Section 3: VM Configuration (hidden by default) -->
+            <div class="form-card-section" id="vm-config-section" style="display: none;">
+                <div class="form-card-header">
+                    <h3 class="form-card-title"><i class="ti ti-cpu"></i> VM Configuration</h3>
+                </div>
+                <div class="form-card-body" style="padding: 12px 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                        <div class="form-group-compact">
+                            <label for="cpu-cores">CPU Cores</label>
+                            <input type="number" id="cpu-cores" name="cpu_cores" min="1" max="16" value="2">
+                            <span class="form-help-compact">Per VM</span>
+                        </div>
+                        
+                        <div class="form-group-compact">
+                            <label for="memory-mb">RAM (MB)</label>
+                            <input type="number" id="memory-mb" name="memory_mb" min="512" max="32768" step="512" value="2048">
+                            <span class="form-help-compact">Per VM</span>
+                        </div>
+                        
+                        <div class="form-group-compact">
+                            <label for="disk-size-gb">Disk (GB)</label>
+                            <input type="number" id="disk-size-gb" name="disk_size_gb" min="8" max="500" value="32">
+                            <span class="form-help-compact">Per VM</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Customize VM specs checkbox (shown only when template is selected) -->
+            <div class="form-card-section" id="customize-specs-section" style="display: none;">
+                <div class="form-card-body" style="padding: 12px 20px;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="customize-specs-checkbox">
+                        <span class="checkbox-label-text">Customize VM specs</span>
+                    </label>
+                    <span class="form-help-compact checkbox-help">Override template defaults for CPU, RAM, and Disk</span>
+                </div>
+            </div>
+            
+            <!-- Section 4: Class Size -->
+            <div class="form-card-section">
+                <div class="form-card-header">
+                    <h3 class="form-card-title"><i class="ti ti-users"></i> Class Size</h3>
+                </div>
+                <div class="form-card-body" style="padding: 12px 20px;">
+                    <div class="form-group-compact">
+                        <label for="pool-size">VM Pool Size</label>
+                        <input type="number" id="pool-size" name="pool_size" min="0" value="0">
+                        <span class="form-help-compact">Number of student VMs to create (0 = create later)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Form Actions -->
+            <div class="form-actions-right">
+                <a href="{{ url_for('classes.classes_list') }}" class="btn-secondary">Cancel</a>
+                <button type="submit" class="btn-primary">
+                    <i class="ti ti-check"></i> Create Class
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Right Column: Floating Summary Panel -->
+    <div class="floating-summary">
+        <div class="floating-summary-title">Deployment Summary</div>
+        
+        <!-- Available Resources -->
+        <div class="summary-section">
+            <div class="resource-available">
+                <div class="resource-available-label">Available vCPUs</div>
+                <div class="resource-available-value" id="summary-vcpus-available">-- vCPUs</div>
+            </div>
+            <div class="resource-available">
+                <div class="resource-available-label">Available RAM</div>
+                <div class="resource-available-value" id="summary-ram-available">-- GB</div>
+            </div>
+        </div>
+        
+        <!-- Request Summary -->
+        <div class="summary-section">
+            <div class="summary-row">
+                <span class="summary-label">Cluster</span>
+                <span class="summary-value" id="summary-cluster">--</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Template</span>
+                <span class="summary-value" id="summary-template">None</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Node</span>
+                <span class="summary-value" id="summary-node">Auto</span>
+            </div>
+        </div>
+        
+        <!-- Totals -->
+        <div class="summary-section">
+            <div class="summary-row">
+                <span class="summary-label">Total VMs</span>
+                <span class="summary-value" id="summary-vm-count">1</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Total CPUs</span>
+                <span class="summary-value" id="summary-total-cpus">2</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Total RAM</span>
+                <span class="summary-value" id="summary-total-ram">2 GB</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Total Disk</span>
+                <span class="summary-value" id="summary-total-disk">32 GB</span>
+            </div>
+        </div>
+        
+        <!-- Usage Bar -->
+        <div>
+            <div style="font-size: 11px; color: #605e5c; margin-bottom: 4px;">CPU Usage</div>
+            <div class="usage-bar">
+                <div class="usage-bar-fill" id="cpu-usage-bar" style="width: 0%;"></div>
+            </div>
+            <div style="font-size: 11px; color: #605e5c; margin-top: 8px; margin-bottom: 4px;">RAM Usage</div>
+            <div class="usage-bar">
+                <div class="usage-bar-fill" id="ram-usage-bar" style="width: 0%;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Store cluster resources for summary calculations
+let clusterResources = null;
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadClusters();
+    
+    // Set up event listeners
+    document.getElementById('deployment-cluster').addEventListener('change', async function() {
+        const clusterId = this.value;
+        await loadTemplatesForCluster(clusterId);
+        await loadNodesForCluster(clusterId);
+        await loadClusterResources(clusterId);
+        updateSummary();
+    });
+    
+    document.getElementById('template-select').addEventListener('change', function() {
+        updateVMConfigVisibility();
+        updateSummary();
+    });
+    
+    document.getElementById('customize-specs-checkbox').addEventListener('change', function() {
+        updateVMConfigVisibility();
+    });
+    
+    // Update summary when form fields change
+    ['pool-size', 'cpu-cores', 'memory-mb', 'disk-size-gb'].forEach(id => {
+        document.getElementById(id).addEventListener('input', updateSummary);
+        document.getElementById(id).addEventListener('change', updateSummary);
+    });
+    
+    // Node selection should update available resources
+    document.getElementById('deployment-node').addEventListener('change', async function() {
+        const clusterId = document.getElementById('deployment-cluster').value;
+        const nodeName = this.value;
+        
+        if (nodeName && nodeName !== '') {
+            // Specific node selected - get its resources
+            await loadNodeResources(clusterId, nodeName);
+        } else {
+            // Auto-distribute - get cluster-wide resources
+            await loadClusterResources(clusterId);
+        }
+        updateSummary();
+    });
+});
+
+async function loadClusters() {
+    const selectElement = document.getElementById('deployment-cluster');
+    try {
+        const resp = await fetch('/api/clusters');
+        const data = await resp.json();
+        
+        if (data.ok && data.clusters) {
+            selectElement.innerHTML = data.clusters.map(c => 
+                `<option value="${c.id}">${c.name}</option>`
+            ).join('');
+            
+            // Load data for first cluster
+            if (data.clusters.length > 0) {
+                const firstCluster = data.clusters[0].id;
+                await loadTemplatesForCluster(firstCluster);
+                await loadNodesForCluster(firstCluster);
+                await loadClusterResources(firstCluster);
+                updateSummary();
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load clusters:', e);
+        selectElement.innerHTML = '<option value="">Default Cluster</option>';
+    }
+}
+
+async function loadTemplatesForCluster(clusterId) {
+    const selectElement = document.getElementById('template-select');
+    
+    if (!clusterId) {
+        selectElement.innerHTML = '<option value="">Select cluster first...</option>';
+        return;
+    }
+    
+    selectElement.innerHTML = '<option value="">Loading templates...</option>';
+    
+    try {
+        const resp = await fetch(`/api/classes/templates?cluster_id=${clusterId}`);
+        const data = await resp.json();
+        
+        if (!data.ok) {
+            selectElement.innerHTML = '<option value="">Failed to load templates</option>';
+            return;
+        }
+        
+        const proxmoxTemplates = data.proxmox_templates || [];
+        const registeredTemplates = data.registered_templates || [];
+        
+        const registeredMap = {};
+        registeredTemplates.forEach(t => {
+            registeredMap[t.proxmox_vmid] = t.id;
+        });
+        
+        window.templateData = {
+            proxmox: proxmoxTemplates,
+            registered: registeredMap
+        };
+        
+        if (proxmoxTemplates.length === 0) {
+            selectElement.innerHTML = '<option value="">None (No templates found)</option>';
+        } else {
+            selectElement.innerHTML = '<option value="">None</option>' +
+                proxmoxTemplates.map(t => {
+                    const registered = registeredMap[t.vmid] ? ' ✓' : '';
+                    return `<option value="${t.vmid}" 
+                                    data-name="${t.name}" 
+                                    data-node="${t.node}"
+                                    data-cpu="${t.cpu_cores || 2}"
+                                    data-ram="${t.memory_mb || 2048}"
+                                    data-disk="${t.disk_size_gb || 32}">${t.name} (VMID: ${t.vmid})${registered}</option>`;
+                }).join('');
+        }
+        
+        updateVMConfigVisibility();
+        
+    } catch (e) {
+        console.error('Failed to load templates:', e);
+        selectElement.innerHTML = '<option value="">None</option>';
+        updateVMConfigVisibility();
+    }
+}
+
+async function loadNodesForCluster(clusterId) {
+    const selectElement = document.getElementById('deployment-node');
+    selectElement.innerHTML = '<option value="">Loading nodes...</option>';
+    
+    if (!clusterId) {
+        selectElement.innerHTML = '<option value="">Auto-distribute (recommended)</option>';
+        return;
+    }
+    
+    try {
+        const resp = await fetch(`/api/clusters/${clusterId}/nodes`);
+        const data = await resp.json();
+        
+        if (data.ok && data.nodes) {
+            selectElement.innerHTML = '<option value="">Auto-distribute (recommended)</option>' +
+                data.nodes.map(n => `<option value="${n.node}">${n.node} (${n.status})</option>`).join('');
+        } else {
+            selectElement.innerHTML = '<option value="">Auto-distribute (recommended)</option>';
+        }
+    } catch (e) {
+        console.error('Failed to load nodes:', e);
+        selectElement.innerHTML = '<option value="">Auto-distribute (recommended)</option>';
+    }
+}
+
+async function loadClusterResources(clusterId) {
+    if (!clusterId) {
+        clusterResources = null;
+        document.getElementById('summary-vcpus-available').textContent = '0 vCPUs';
+        document.getElementById('summary-ram-available').textContent = '0 GB';
+        return;
+    }
+    
+    try {
+        console.log('[RESOURCES] Loading cluster resources for:', clusterId);
+        console.log('[RESOURCES] Fetching URL:', `/api/clusters/${clusterId}/resources`);
+        
+        const resp = await fetch(`/api/clusters/${clusterId}/resources`);
+        console.log('[RESOURCES] Response status:', resp.status, resp.statusText);
+        
+        const data = await resp.json();
+        console.log('[RESOURCES] Full response data:', JSON.stringify(data, null, 2));
+        
+        if (data.ok && data.resources) {
+            clusterResources = data.resources;
+            console.log('[RESOURCES] Resources object:', clusterResources);
+            console.log('[RESOURCES] CPU object:', clusterResources.cpu);
+            console.log('[RESOURCES] Memory object:', clusterResources.memory);
+            
+            // Update available resources display
+            const vcpuAvailable = clusterResources.cpu?.vcpu_available || 0;
+            const ramAvailableMb = clusterResources.memory?.available_mb || 0;
+            const ramAvailableGb = Math.round(ramAvailableMb / 1024);
+            
+            console.log('[RESOURCES] Calculated values - vCPUs:', vcpuAvailable, 'RAM GB:', ramAvailableGb);
+            
+            const vcpuElement = document.getElementById('summary-vcpus-available');
+            const ramElement = document.getElementById('summary-ram-available');
+            
+            console.log('[RESOURCES] vCPU element:', vcpuElement);
+            console.log('[RESOURCES] RAM element:', ramElement);
+            
+            vcpuElement.textContent = `${vcpuAvailable} vCPUs`;
+            ramElement.textContent = `${ramAvailableGb} GB`;
+            
+            console.log('[RESOURCES] Successfully updated display');
+        } else {
+            console.error('[RESOURCES] Invalid response - ok:', data.ok, 'resources:', data.resources);
+            console.error('[RESOURCES] Full error response:', data);
+            document.getElementById('summary-vcpus-available').textContent = 'Error';
+            document.getElementById('summary-ram-available').textContent = 'Error';
+        }
+    } catch (e) {
+        console.error('[RESOURCES] Exception caught:', e);
+        console.error('[RESOURCES] Exception stack:', e.stack);
+        clusterResources = null;
+        document.getElementById('summary-vcpus-available').textContent = 'Error';
+        document.getElementById('summary-ram-available').textContent = 'Error';
+    }
+}
+
+async function loadNodeResources(clusterId, nodeName) {
+    if (!clusterId || !nodeName) {
+        return loadClusterResources(clusterId);
+    }
+    
+    try {
+        console.log('Loading node resources for:', clusterId, nodeName);
+        const resp = await fetch(`/api/clusters/${clusterId}/nodes/${nodeName}/resources`);
+        const data = await resp.json();
+        
+        console.log('Node resources response:', data);
+        
+        if (data.ok && data.resources) {
+            clusterResources = data.resources;
+            
+            // Update available resources display for single node
+            const vcpuAvailable = clusterResources.cpu.vcpu_available;
+            const ramAvailableMb = clusterResources.memory.available_mb;
+            const ramAvailableGb = Math.round(ramAvailableMb / 1024);
+            
+            console.log('Setting node vCPUs:', vcpuAvailable, 'RAM GB:', ramAvailableGb);
+            
+            document.getElementById('summary-vcpus-available').textContent = `${vcpuAvailable} vCPUs`;
+            document.getElementById('summary-ram-available').textContent = `${ramAvailableGb} GB`;
+        } else {
+            console.error('Invalid node resources response:', data);
+            document.getElementById('summary-vcpus-available').textContent = 'Error';
+            document.getElementById('summary-ram-available').textContent = 'Error';
+        }
+    } catch (e) {
+        console.error('Failed to load node resources:', e);
+        // Fall back to cluster-wide resources
+        await loadClusterResources(clusterId);
+    }
+}
+
+function updateVMConfigVisibility() {
+    const templateSelect = document.getElementById('template-select');
+    const customizeSection = document.getElementById('customize-specs-section');
+    const vmConfigSection = document.getElementById('vm-config-section');
+    const customizeCheckbox = document.getElementById('customize-specs-checkbox');
+    
+    const noTemplate = templateSelect.value === '';
+    
+    if (noTemplate) {
+        // No template: always show VM config, hide customize checkbox
+        customizeSection.style.display = 'none';
+        vmConfigSection.style.display = 'block';
+    } else {
+        // Template selected: show customize checkbox, show config only if checked
+        customizeSection.style.display = 'block';
+        vmConfigSection.style.display = customizeCheckbox.checked ? 'block' : 'none';
+    }
+}
+
+function updateSummary() {
+    const clusterSelect = document.getElementById('deployment-cluster');
+    const templateSelect = document.getElementById('template-select');
+    const nodeSelect = document.getElementById('deployment-node');
+    const poolSize = parseInt(document.getElementById('pool-size').value) || 0;
+    
+    // Get specs from form or template
+    let cpuCores = parseInt(document.getElementById('cpu-cores').value) || 2;
+    let memoryMb = parseInt(document.getElementById('memory-mb').value) || 2048;
+    let diskSizeGb = parseInt(document.getElementById('disk-size-gb').value) || 32;
+    
+    // If template is selected and customize is NOT checked, use template specs
+    const selectedOption = templateSelect.options[templateSelect.selectedIndex];
+    const customizeCheckbox = document.getElementById('customize-specs-checkbox');
+    const hasTemplate = templateSelect.value !== '';
+    
+    if (hasTemplate && selectedOption && !customizeCheckbox.checked) {
+        // Use template specs
+        cpuCores = parseInt(selectedOption.dataset.cpu) || 2;
+        memoryMb = parseInt(selectedOption.dataset.ram) || 2048;
+        diskSizeGb = parseInt(selectedOption.dataset.disk) || 32;
+    }
+    
+    // Total VMs = pool size + 1 (teacher VM)
+    const totalVMs = poolSize + 1;
+    const totalCPUs = totalVMs * cpuCores;
+    const totalRamMb = totalVMs * memoryMb;
+    const totalDiskGb = totalVMs * diskSizeGb;
+    
+    // Update summary display
+    document.getElementById('summary-cluster').textContent = 
+        clusterSelect.options[clusterSelect.selectedIndex]?.text || '--';
+    
+    const selectedTemplate = templateSelect.options[templateSelect.selectedIndex];
+    document.getElementById('summary-template').textContent = 
+        templateSelect.value ? (selectedTemplate?.dataset.name || 'Selected') : 'None';
+    
+    document.getElementById('summary-node').textContent = 
+        nodeSelect.value || 'Auto';
+    
+    document.getElementById('summary-vm-count').textContent = totalVMs;
+    document.getElementById('summary-total-cpus').textContent = totalCPUs;
+    document.getElementById('summary-total-ram').textContent = Math.round(totalRamMb / 1024) + ' GB';
+    document.getElementById('summary-total-disk').textContent = totalDiskGb + ' GB';
+    
+    // Update usage bars if we have cluster resources
+    if (clusterResources) {
+        const cpuPercent = Math.min(100, (totalCPUs / clusterResources.cpu.vcpu_available) * 100);
+        const ramPercent = Math.min(100, (totalRamMb / clusterResources.memory.available_mb) * 100);
+        
+        const cpuBar = document.getElementById('cpu-usage-bar');
+        const ramBar = document.getElementById('ram-usage-bar');
+        
+        cpuBar.style.width = cpuPercent + '%';
+        ramBar.style.width = ramPercent + '%';
+        
+        // Add warning/danger classes based on usage
+        cpuBar.className = 'usage-bar-fill' + (cpuPercent > 80 ? ' danger' : cpuPercent > 60 ? ' warning' : '');
+        ramBar.className = 'usage-bar-fill' + (ramPercent > 80 ? ' danger' : ramPercent > 60 ? ' warning' : '');
+    }
+}
+
+// Handle form submission
+document.getElementById('create-class-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('class-name').value.trim();
+    const description = document.getElementById('class-description').value.trim();
+    const poolSize = parseInt(document.getElementById('pool-size').value) || 0;
+    const cpuCores = parseInt(document.getElementById('cpu-cores').value) || 2;
+    const memoryMb = parseInt(document.getElementById('memory-mb').value) || 2048;
+    const diskSizeGb = parseInt(document.getElementById('disk-size-gb').value) || 32;
+    const templateVmid = parseInt(document.getElementById('template-select').value);
+    
+    if (!name) {
+        alert('Please enter a class name.');
+        return;
+    }
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ti ti-hourglass"></i> Creating...';
+    
+    try {
+        let templateId = null;
+        
+        // Only register template if one was selected
+        if (templateVmid) {
+            templateId = window.templateData.registered[templateVmid];
+            
+            if (!templateId) {
+                const selectedOption = document.querySelector(`#template-select option[value="${templateVmid}"]`);
+                const templateName = selectedOption.dataset.name || `Template ${templateVmid}`;
+                const templateNode = selectedOption.dataset.node;
+                
+                const templateResp = await fetch('/api/classes/templates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: templateName,
+                        proxmox_vmid: templateVmid,
+                        node: templateNode
+                    })
+                });
+                const templateData = await templateResp.json();
+                if (templateData.ok && templateData.template) {
+                    templateId = templateData.template.id;
+                } else {
+                    throw new Error(templateData.error || 'Failed to register template');
+                }
+            }
+        }
+        
+        const resp = await fetch('/api/classes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                description: description,
+                pool_size: poolSize,
+                cpu_cores: cpuCores,
+                memory_mb: memoryMb,
+                disk_size_gb: diskSizeGb,
+                template_id: templateId,
+                deployment_node: document.getElementById('deployment-node').value || null,
+                deployment_cluster: document.getElementById('deployment-cluster').value || null,
+                deployment_method: document.getElementById('deployment-method').value || 'config_clone'
+            })
+        });
+        
+        const data = await resp.json();
+        
+        if (data.ok) {
+            // Show progress modal
+            const progressModal = document.createElement('div');
+            progressModal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+            
+            const totalVMs = (poolSize || 0) + 2; // student VMs + teacher + template
+            
+            progressModal.innerHTML = `
+                <div style="background: white; border-radius: 8px; padding: 40px; max-width: 500px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                    <div style="margin-bottom: 24px;">
+                        <div style="width: 64px; height: 64px; border: 4px solid #e1dfdd; border-top-color: #0078d4; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                    </div>
+                    <h2 style="margin: 0 0 16px 0; font-size: 24px; color: #323130;">Creating Class VMs</h2>
+                    <p style="color: #605e5c; margin: 0 0 8px 0; font-size: 16px;">
+                        <strong>${name}</strong>
+                    </p>
+                    <p style="color: #8a8886; margin: 0 0 24px 0; font-size: 14px;">
+                        Deploying ${totalVMs} VM${totalVMs !== 1 ? 's' : ''}...
+                    </p>
+                    <div style="background: #f3f2f1; border-radius: 4px; padding: 16px; margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <i class="ti ti-database" style="font-size: 20px; color: #0078d4;"></i>
+                            <div style="text-align: left; flex: 1;">
+                                <div style="font-weight: 600; color: #323130; font-size: 13px;">Exporting template disk</div>
+                                <div style="color: #8a8886; font-size: 12px;">Converting to QCOW2 format...</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <i class="ti ti-cpu" style="font-size: 20px; color: #0078d4;"></i>
+                            <div style="text-align: left; flex: 1;">
+                                <div style="font-weight: 600; color: #323130; font-size: 13px;">Creating VM shells</div>
+                                <div style="color: #8a8886; font-size: 12px;">Allocating VMIDs and resources...</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <i class="ti ti-refresh" style="font-size: 20px; color: #0078d4;"></i>
+                            <div style="text-align: left; flex: 1;">
+                                <div style="font-weight: 600; color: #323130; font-size: 13px;">Creating overlay disks</div>
+                                <div style="color: #8a8886; font-size: 12px;">Setting up copy-on-write layers...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="progress-timer" style="color: #a19f9d; font-size: 13px; margin: 0;">
+                        ⏱ This process may take 2-5 minutes<br>
+                        <span id="progress-status-text">Waiting for teacher VM...</span>
+                    </p>
+                </div>
+                <style>
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
+            
+            document.body.appendChild(progressModal);
+            
+            const classId = data.class.id;
+            
+            // Poll for teacher VM availability
+            let pollAttempts = 0;
+            const maxPollAttempts = 60; // Poll for up to 5 minutes (5s intervals)
+            
+            async function pollTeacherVM() {
+                pollAttempts++;
+                
+                // Guard against null classId
+                if (!classId || classId === 'null') {
+                    console.error('Cannot poll teacher VM: classId is null');
+                    return;
+                }
+                
+                try {
+                    const resp = await fetch(`/api/classes/${classId}/template/info?v=${Date.now()}`);
+                    const data = await resp.json();
+                    
+                    // Update progress text
+                    const statusEl = document.getElementById('progress-status-text');
+                    if (statusEl) {
+                        statusEl.textContent = `Checking teacher VM... (${pollAttempts}/${maxPollAttempts})`;
+                    }
+                    
+                    // Check if teacher VM is ready
+                    if (data.ok && data.template && data.template.proxmox_vmid) {
+                        // Teacher VM is ready!
+                        if (statusEl) {
+                            statusEl.textContent = 'Teacher VM ready! Redirecting...';
+                            statusEl.style.color = '#107c10';
+                        }
+                        
+                        // Redirect to class page
+                        setTimeout(() => {
+                            window.location.href = '/classes/' + classId;
+                        }, 1000);
+                        return;
+                    }
+                    
+                    // Not ready yet, keep polling
+                    if (pollAttempts < maxPollAttempts) {
+                        setTimeout(pollTeacherVM, 5000); // Poll every 5 seconds
+                    } else {
+                        // Timeout - redirect anyway
+                        if (statusEl) {
+                            statusEl.textContent = 'Taking longer than expected, redirecting...';
+                            statusEl.style.color = '#d13438';
+                        }
+                        setTimeout(() => {
+                            window.location.href = '/classes/' + classId + '?deployment=inprogress';
+                        }, 2000);
+                    }
+                } catch (e) {
+                    console.error('Error polling teacher VM:', e);
+                    // Continue polling on error
+                    if (pollAttempts < maxPollAttempts) {
+                        setTimeout(pollTeacherVM, 5000);
+                    } else {
+                        window.location.href = '/classes/' + classId + '?deployment=inprogress';
+                    }
+                }
+            }
+            
+            // Start polling after initial delay
+            setTimeout(pollTeacherVM, 3000);
+        } else {
+            alert('Failed to create class: ' + (data.error || 'Unknown error'));
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="ti ti-check"></i> Create Class';
+        }
+    } catch (e) {
+        console.error('Error creating class:', e);
+        alert('Error creating class: ' + e.message);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-check"></i> Create Class';
+    }
+});
+</script>
+
+{% endblock %}

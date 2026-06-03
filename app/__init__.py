@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""
+Flask Application Factory
+
+This module provides the create_app factory function for creating
+configured Flask application instances.
+"""
+
+import logging
+import os
+
+from flask import Flask, session
+
+from app.config import SECRET_KEY
+
+# Initialize logging
+from app.utils.logging import configure_logging, get_logger
+
+configure_logging()
+logger = get_logger(__name__)
+
+
+def create_app(config=None):
+    """Create and configure the Flask application.
+    
+    Args:
+        config: Optional configuration dictionary to override defaults
+        
+    Returns:
+        Configured Flask application instance
+    """
+    # Validate SECRET_KEY before creating Flask app
+    if not SECRET_KEY:
+        raise RuntimeError("SECRET_KEY is not set! Check app/config.py")
+    
+    # Create Flask app with template/static from app directory
+    template_folder = os.path.join(os.path.dirname(__file__), 'templates')
+    static_folder = os.path.join(os.path.dirname(__file__), 'static')
+    
+    app = Flask(__name__, 
+                template_folder=template_folder,
+                static_folder=static_folder)
+    
+    # Configure secret key IMMEDIATELY (required for sessions)
+    # Set both attributes that Flask checks
+    app.secret_key = SECRET_KEY
+    app.config['SECRET_KEY'] = SECRET_KEY
+    app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP for dev
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Default (works for same-origin)
+    logger.info(f"SECRET_KEY configured (length: {len(SECRET_KEY)})")
+    
+    # Configure file upload limits (10GB max for ISOs)
+    app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 * 1024  # 10GB
+    app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+    
+    # Apply any additional config
+    if config:
+        app.config.update(config)
+    
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Initialize database (SQLAlchemy)
+    from app.models import init_db
+    init_db(app)
+    logger.info("Database initialized")
+    
+    # Initialize WebSocket support
+    try:
+        from flask_sock import Sock
+        sock = Sock(app)
+        
+        # Initialize SSH WebSocket routes
+        from app.routes.api.ssh import init_websocket
+        init_websocket(app, sock)
+        
+        # Initialize console WebSocket proxy
+        from app.routes.api.console import init_websocket_proxy
+        init_websocket_proxy(app, sock)
+        logger.info("Console VNC WebSocket proxy ENABLED")
+        
+        logger.info("WebSocket support ENABLED (flask-sock loaded)")
+    except ImportError as e:
+        logger.warning(f"WebSocket support DISABLED (flask-sock not available): {e}")
+    except Exception as e:
+        logger.error(f"WebSocket initialization failed: {e}", exc_info=True)
+    
+    # Register blueprints
+    from app.routes import register_blueprints
+    register_blueprints(app)
+    
+    # Global error handler for API routes to return JSON instead of HTML
+    @app.errorhandler(Exception)
+    def handle_api_error(error):
+        """Return JSON for API errors instead of HTML."""
+        from flask import jsonify, request
+
+        # Log all errors with the URL that caused them
+        logger.error(f"Error on {request.method} {request.path}: {error}", exc_info=True)
+        
+        # Only apply to /api/ routes
+        if request.path.startswith('/api/'):
+            # Get HTTP status code if available
+            status_code = getattr(error, 'code', 500)
+            
+            return jsonify({
+                'ok': False,
+                'error': str(error),
+                'type': type(error).__name__
+            }), status_code
+        
+        # For non-API routes, use default Flask error handling
+        raise error
+    
+    # Add favicon route to prevent 404 errors
+    @app.route('/favicon.ico')
+    def favicon():
+        """Favicon endpoint - return 204 No Content to prevent errors."""
+        from flask import make_response
+        response = make_response('', 204)
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
+    
+    # Register context processor
+    @app.context_processor
+    def inject_admin_flag():
+        """Inject admin flag and cluster info into all templates."""
+        from app.services.user_manager import is_admin_user
+        
+        user = session.get("user")
+        is_admin = is_admin_user(user) if user else False
+        
+        # Log admin status for debugging
+        if user:
+            app.logger.debug("inject_admin_flag: user=%s is_admin=%s", user, is_admin)
+        
+        # Inject cluster info for dropdown (load from database)
+        from app.services.proxmox_service import get_clusters_from_db
+        db_clusters = get_clusters_from_db()
+        current_cluster = session.get("cluster_id", db_clusters[0]["id"] if db_clusters else "")
+        clusters = [{"id": c["id"], "name": c["name"]} for c in db_clusters]
+        
+        # Check if user has local account with role info
+        local_user = None
+        local_user_role = None
+        if user:
+            try:
+                from app.services.class_service import get_user_by_username
+                username = user.split('@')[0] if '@' in user else user
+                local_user = get_user_by_username(username)
+                if local_user:
+                    local_user_role = local_user.role
+            except Exception:
+                pass
+        
+        return {
+            "is_admin": is_admin,
+            "clusters": clusters,
+            "current_cluster": current_cluster,
+            "local_user": local_user,
+            "local_user_role": local_user_role,
+        }
+    
+    # Start background IP scanner
+    try:
+        from app.services.proxmox_service import start_background_ip_scanner
+        start_background_ip_scanner(app)
+        logger.info("Background IP scanner started")
+    except Exception as e:
+        logger.error(f"Failed to start background IP scanner: {e}", exc_info=True)
+    
+    # Start unified background sync daemon (VM inventory + templates + ISOs)
+    try:
+        from app.services.background_sync import start_background_sync
+        start_background_sync(app)
+        logger.info("Unified background sync started (VM inventory + templates + ISOs)")
+    except Exception as e:
+        logger.error(f"Failed to start background sync: {e}", exc_info=True)
+    
+    # Start auto-shutdown daemon for restricted classes
+    try:
+        from app.services.auto_shutdown_service import start_auto_shutdown_daemon
+        start_auto_shutdown_daemon(app)
+        logger.info("Auto-shutdown daemon started")
+    except Exception as e:
+        logger.error(f"Failed to start auto-shutdown daemon: {e}", exc_info=True)
+    
+    # Ensure templates are replicated across all nodes at startup (disabled by default)
+    # Check SystemSettings for enable_template_replication (database-first)
+    def check_template_replication():
+        """Check if template replication is enabled and start if needed."""
+        try:
+            from app.models import SystemSettings
+            with app.app_context():
+                enable_template_replication = SystemSettings.get('enable_template_replication', 'false') == 'true'
+                
+                if enable_template_replication:
+                    def _replicate_templates_startup():
+                        import time
+                        time.sleep(2)
+                        try:
+                            with app.app_context():
+                                from app.services.proxmox_operations import (
+                                    replicate_templates_to_all_nodes,
+                                )
+                                logger.info("Starting template replication check across nodes...")
+                                replicate_templates_to_all_nodes()
+                                logger.info("Template replication check completed")
+                        except Exception as e:
+                            logger.warning(f"Template replication startup failed: {e}")
+
+                    import threading
+                    threading.Thread(target=_replicate_templates_startup, daemon=True).start()
+        except Exception as e:
+            logger.debug(f"Could not check template replication setting: {e}")
+    
+    # Check template replication in background to avoid blocking startup
+    import threading
+    threading.Thread(target=check_template_replication, daemon=True).start()
+    
+    # Start daemon monitor for automatic restart of failed background services
+    try:
+        from app.services.daemon_monitor import start_daemon_monitor, register_daemon
+        from app.services.health_service import is_daemon_healthy
+        
+        # Helper functions to restart daemons
+        def _restart_background_sync(app):
+            """Restart background sync daemon."""
+            from app.services.background_sync import start_background_sync
+            with app.app_context():
+                start_background_sync(app)
+        
+        def _restart_auto_shutdown(app):
+            """Restart auto-shutdown daemon."""
+            from app.services.auto_shutdown_service import start_auto_shutdown_daemon
+            with app.app_context():
+                start_auto_shutdown_daemon(app)
+        
+        def _restart_ip_scanner(app):
+            """Restart IP scanner daemon."""
+            from app.services.proxmox_service import start_background_ip_scanner
+            with app.app_context():
+                start_background_ip_scanner(app)
+        
+        # Register daemons for monitoring
+        register_daemon(
+            'background_sync',
+            health_check_func=lambda: is_daemon_healthy('background_sync', max_age_seconds=1200),  # 20 min
+            restart_func=lambda: _restart_background_sync(app),
+            max_restarts_per_hour=5
+        )
+        register_daemon(
+            'auto_shutdown',
+            health_check_func=lambda: is_daemon_healthy('auto_shutdown', max_age_seconds=330),  # 5.5 min
+            restart_func=lambda: _restart_auto_shutdown(app),
+            max_restarts_per_hour=5
+        )
+        register_daemon(
+            'ip_scanner',
+            health_check_func=lambda: is_daemon_healthy('ip_scanner', max_age_seconds=900),  # tolerate slow cluster timeout windows
+            restart_func=lambda: _restart_ip_scanner(app),
+            max_restarts_per_hour=10
+        )
+        
+        start_daemon_monitor(app)
+        logger.info("Daemon monitor started")
+    except Exception as e:
+        logger.error(f"Failed to start daemon monitor: {e}", exc_info=True)
+    
+    # Depl0y integration removed
+    
+    logger.info("Flask app created successfully")
+    return app

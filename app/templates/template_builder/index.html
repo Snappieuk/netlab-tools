@@ -1,0 +1,2283 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="ti ti-tools"></i> VM Builder
+    </h1>
+    <p class="page-subtitle">Create VMs and templates for your classes</p>
+</div>
+
+<div class="content-container">
+    <!-- VM Creation Section -->
+    <div class="card">
+        <div class="card-header">
+            <h2 style="font-size: 1.3rem; margin: 0;">
+                <i class="ti ti-circle-plus"></i> Create New VM
+            </h2>
+        </div>
+        <div class="card-body">
+            <p style="color: #666; margin-bottom: 1.5rem;">
+                Build a new VM from scratch or clone from an existing template. Optionally convert to template.
+            </p>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem;">
+                <div class="option-card" id="btn-create-from-scratch" style="cursor: pointer;">
+                    <div class="option-card-icon" style="background: #e6f2ff;">
+                        <i class="ti ti-file-plus" style="font-size: 2.5rem; color: #0078d4;"></i>
+                    </div>
+                    <h3 style="font-size: 1.15rem; margin: 1rem 0 0.5rem; font-weight: 600;">Build from Scratch</h3>
+                    <p style="color: #666; font-size: 0.9rem; margin: 0;">Create a new VM from ISO (regular VM or template)</p>
+                </div>
+                
+                <div class="option-card" id="btn-convert-existing" style="cursor: pointer;">
+                    <div class="option-card-icon" style="background: #e6f4ea;">
+                        <i class="ti ti-refresh" style="font-size: 2.5rem; color: #107c10;"></i>
+                    </div>
+                    <h3 style="font-size: 1.15rem; margin: 1rem 0 0.5rem; font-weight: 600;">Convert Existing VM</h3>
+                    <p style="color: #666; font-size: 0.9rem; margin: 0;">Turn an existing VM into a template</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- My VMs Section (for in-progress VM builds) -->
+    <div class="card" style="margin-top: 1.5rem;">
+        <div class="card-header">
+            <h2 style="font-size: 1.3rem; margin: 0;">
+                <i class="ti ti-device-desktop"></i> My VMs
+            </h2>
+        </div>
+        <div class="card-body">
+            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                VMs you've created. Install OS, configure, then optionally convert to template for class use.
+            </p>
+            <div id="vms-loading" style="text-align: center; padding: 2rem; color: #666;">
+                <i class="ti ti-hourglass"></i> Loading VMs...
+            </div>
+            <div id="vms-list" style="display: none;">
+                <!-- VMs will be loaded here via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Existing Templates Section -->
+    <div class="card" style="margin-top: 1.5rem;">
+        <div class="card-header">
+            <h2 style="font-size: 1.3rem; margin: 0;">
+                <i class="ti ti-folders"></i> My Templates
+            </h2>
+        </div>
+        <div class="card-body">
+            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                Templates ready to use in classes. These can be cloned but not started directly.
+            </p>
+            <div id="templates-loading" style="text-align: center; padding: 2rem; color: #666;">
+                <i class="ti ti-hourglass"></i> Loading templates...
+            </div>
+            <div id="templates-list" style="display: none;">
+                <!-- Templates will be loaded here via JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Migration Modal -->
+<!-- Build VM Modal -->
+<div id="build-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">
+                <i class="ti ti-file-plus" style="margin-right: 0.5rem;"></i>Build VM from Scratch
+            </h2>
+            <button class="btn-close" onclick="closeBuildModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem 1.5rem;">
+            <form id="build-form" onsubmit="submitBuildVM(event)">
+                <!-- Basic Configuration -->
+                <div class="form-section">
+                    <div class="section-label">Basic Configuration</div>
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label for="build-vm-name" class="compact-label">VM Name</label>
+                            <input type="text" id="build-vm-name" class="form-control compact-input" required placeholder="my-template-vm">
+                        </div>
+                        <div class="form-col">
+                            <label for="build-start-method" class="compact-label">Start Method</label>
+                            <select id="build-start-method" class="form-control compact-input" onchange="toggleStartMethod()" required>
+                                <option value="iso">ISO Image</option>
+                                <option value="template">Clone from Template</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" id="iso-section">
+                        <div class="form-col">
+                            <label for="build-os-type" class="compact-label">OS Type</label>
+                            <select id="build-os-type" class="form-control compact-input">
+                                <option value="ubuntu">Ubuntu</option>
+                                <option value="debian">Debian</option>
+                                <option value="centos">CentOS</option>
+                                <option value="rocky">Rocky Linux</option>
+                                <option value="alma">AlmaLinux</option>
+                                <option value="windows">Windows</option>
+                            </select>
+                        </div>
+                        <div class="form-col">
+                            <label for="build-iso" class="compact-label">ISO Image</label>
+                            <select id="build-iso" class="form-control compact-input">
+                                <option value="">Loading ISOs...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" id="template-section" style="display: none;">
+                        <div class="form-col" style="grid-column: 1 / -1;">
+                            <label for="build-template" class="compact-label">Template</label>
+                            <select id="build-template" class="form-control compact-input">
+                                <option value="">Loading templates...</option>
+                            </select>
+                            <small style="color: #666; display: block; margin-top: 0.5rem;">
+                                VM will be cloned from the selected template with hardware specs from template
+                            </small>
+                        </div>
+                    </div>
+                    <div id="iso-upload-section" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                        <small style="color: #666; flex: 1;">
+                            VM will be created on TRUENAS storage. ISO location determines node.
+                        </small>
+                        <button type="button" onclick="openUploadISOModal()" class="btn-upload-iso">
+                            <i class="ti ti-upload"></i>Upload ISO
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Hardware Configuration -->
+                <div class="form-section" id="hardware-section">
+                    <div class="section-label">Hardware</div>
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label for="build-cpu-cores" class="compact-label">CPU Cores</label>
+                            <input type="number" id="build-cpu-cores" class="form-control compact-input" min="1" max="64" value="2" required>
+                        </div>
+                        <div class="form-col">
+                            <label for="build-memory" class="compact-label">Memory (MB)</label>
+                            <input type="number" id="build-memory" class="form-control compact-input" min="512" max="65536" step="512" value="2048" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label for="build-disk-size" class="compact-label">Disk Size (GB)</label>
+                            <input type="number" id="build-disk-size" class="form-control compact-input" min="8" max="2048" value="32" required>
+                        </div>
+                        <div class="form-col">
+                            <label for="build-network-bridge" class="compact-label">Network Bridge</label>
+                            <input type="text" id="build-network-bridge" class="form-control compact-input" value="vmbr0" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Template Options -->
+                <div class="form-section">
+                    <div class="section-label">VM Type</div>
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label class="compact-label" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <input type="checkbox" id="build-convert-template">
+                                <span>Convert to template after creation</span>
+                            </label>
+                            <small style="color: #666; display: block; margin-left: 1.5rem;">
+                                <strong>Unchecked:</strong> Creates a regular VM you can start and use<br>
+                                <strong>Checked:</strong> Creates a template for class deployment (cannot be started directly)
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="modal-actions">
+                    <button type="button" onclick="closeBuildModal()" class="btn-cancel">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn-migrate">
+                        <i class="ti ti-player-play" style="margin-right: 0.5rem;"></i>Build VM
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Convert Existing VM Modal -->
+<div id="convert-existing-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 600px; width: 90%;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">
+                <i class="ti ti-refresh" style="margin-right: 0.5rem;"></i>Convert Existing VM to Template
+            </h2>
+            <button class="btn-close" onclick="closeConvertExistingModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem 1.5rem;">
+            <div id="convert-vm-loading" style="text-align: center; padding: 2rem; color: #666;">
+                <i class="ti ti-hourglass"></i> Loading your VMs...
+            </div>
+            <div id="convert-vm-list" style="display: none;">
+                <p style="color: #666; margin-bottom: 1rem;">Select a VM to convert to a template. <strong>Warning:</strong> This action cannot be undone.</p>
+                <div id="convert-vm-cards" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- VM cards will be loaded here -->
+                </div>
+            </div>
+            <div id="convert-vm-empty" style="display: none; text-align: center; padding: 2rem; color: #999;">
+                <i class="ti ti-inbox" style="font-size: 3rem; display: block; margin-bottom: 1rem;"></i>
+                <p>No VMs available to convert.</p>
+                <p style="font-size: 0.9rem;">Build a VM first, then come back here to convert it to a template.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Console Modal -->
+<div id="console-modal" class="modal" style="display: none; visibility: hidden;">
+    <div class="modal-content" style="max-width: 1400px; width: 95%; max-height: 95vh;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">
+                <i class="ti ti-terminal" style="margin-right: 0.5rem;"></i>VM Console - <span id="console-vm-name"></span>
+            </h2>
+            <button class="btn-close" onclick="closeConsoleModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 0; height: calc(95vh - 80px);">
+            <iframe id="console-frame" style="width: 100%; height: 100%; border: none;" frameborder="0"></iframe>
+        </div>
+    </div>
+</div>
+
+<!-- Edit VM Modal -->
+<div id="edit-vm-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px; width: 90%;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">
+                <i class="ti ti-pencil" style="margin-right: 0.5rem;"></i>Edit VM Hardware
+            </h2>
+            <button class="btn-close" onclick="closeEditVMModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.25rem 1.5rem;">
+            <form id="edit-vm-form" onsubmit="submitEditVM(event)">
+                <input type="hidden" id="edit-vm-id">
+                
+                <div class="form-section">
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label class="compact-label">VM Name</label>
+                            <input type="text" id="edit-vm-name-display" class="form-control compact-input" disabled>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label for="edit-vm-cores" class="compact-label">CPU Cores</label>
+                            <input type="number" id="edit-vm-cores" class="form-control compact-input" min="1" max="64" required>
+                        </div>
+                        <div class="form-col">
+                            <label for="edit-vm-memory" class="compact-label">Memory (MB)</label>
+                            <input type="number" id="edit-vm-memory" class="form-control compact-input" min="512" max="65536" step="512" required>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background: #fef3c7; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border-left: 4px solid #f59e0b;">
+                    <div style="font-size: 0.875rem; color: #92400e;">
+                        <strong>⚠️ Note:</strong> VM must be stopped to change hardware specs. Changes will be applied via Proxmox API.
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" onclick="closeEditVMModal()" class="btn-cancel">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn-migrate">
+                        <i class="ti ti-circle-check" style="margin-right: 0.5rem;"></i>Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Build Success Modal -->
+<div id="build-success-modal" class="modal" style="display: none; visibility: hidden;">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0; color: #22c55e;">
+                <i class="ti ti-circle-check" style="margin-right: 0.5rem;"></i>VM Created Successfully
+            </h2>
+            <button class="btn-close" onclick="closeBuildSuccessModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.5rem;">
+            <p style="margin-bottom: 1rem;" id="build-success-message"></p>
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+                <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.5rem;">VM ID:</div>
+                <div style="font-size: 1.25rem; font-weight: 600;" id="build-success-vmid"></div>
+            </div>
+            <p style="font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem;">
+                The VM has been created but is not started. You can now open the console to install the operating system.
+            </p>
+        </div>
+        <div class="modal-actions">
+            <button type="button" onclick="closeBuildSuccessModal()" class="btn-cancel">
+                Close
+            </button>
+            <button type="button" onclick="openConsoleFromSuccess()" class="btn-migrate">
+                <i class="ti ti-terminal" style="margin-right: 0.5rem;"></i>Open Console
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Upload ISO Modal -->
+<div id="upload-iso-modal" class="modal" style="display: none; visibility: hidden;">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">
+                <i class="ti ti-upload" style="margin-right: 0.5rem;"></i>Upload ISO Image
+            </h2>
+            <button class="btn-close" onclick="closeUploadISOModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 1.5rem;">
+            <form id="upload-iso-form" onsubmit="submitUploadISO(event)">
+                <div class="form-section">
+                    <div class="form-row">
+                        <div class="form-col">
+                            <label for="upload-cluster" class="compact-label">Target Cluster</label>
+                            <select id="upload-cluster" class="form-control compact-input" required onchange="loadUploadNodes()">
+                                <option value="">Select Cluster...</option>
+                            </select>
+                        </div>
+                        <div class="form-col">
+                            <label for="upload-node" class="compact-label">Target Node</label>
+                            <select id="upload-node" class="form-control compact-input" required onchange="loadUploadStorages()">
+                                <option value="">Select Node...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-col" style="grid-column: 1 / -1;">
+                            <label for="upload-storage" class="compact-label">Target Storage</label>
+                            <select id="upload-storage" class="form-control compact-input" required onchange="verifyUploadStorage()">
+                                <option value="">Select storage...</option>
+                            </select>
+                            <div id="storage-verification" style="margin-top: 0.5rem; padding: 0.5rem; border-radius: 0.375rem; display: none;">
+                                <!-- Status will be inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-col" style="grid-column: 1 / -1;">
+                            <label class="compact-label">Upload Method</label>
+                            <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="radio" name="upload-method" value="file" checked onchange="toggleUploadMethod()">
+                                    <span style="margin-left: 0.5rem;">From Computer</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="radio" name="upload-method" value="url" onchange="toggleUploadMethod()">
+                                    <span style="margin-left: 0.5rem;">From URL</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="upload-file-section" class="form-row">
+                        <div class="form-col" style="grid-column: 1 / -1;">
+                            <label for="upload-iso-file" class="compact-label">ISO File</label>
+                            <input type="file" id="upload-iso-file" class="form-control compact-input" accept=".iso">
+                            <small style="color: #666; margin-top: 0.5rem; display: block;">
+                                Select an ISO file from your computer. Large files may take several minutes to upload.
+                            </small>
+                        </div>
+                    </div>
+                    <div id="upload-url-section" class="form-row" style="display: none;">
+                        <div class="form-col" style="grid-column: 1 / -1;">
+                            <label for="upload-iso-url" class="compact-label">ISO URL</label>
+                            <input type="url" id="upload-iso-url" class="form-control compact-input" placeholder="https://example.com/debian-12.iso">
+                            <small style="color: #666; margin-top: 0.5rem; display: block;">
+                                <i class="ti ti-info-circle" style="vertical-align: middle;"></i>
+                                Proxmox will download the ISO directly (faster, more reliable for large files).
+                            </small>
+                        </div>
+                    </div>
+                    <div id="upload-progress" style="display: none; margin-top: 1rem;">
+                        <div style="background: #f3f4f6; padding: 1rem; border-radius: 0.5rem;">
+                            <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.5rem;">Upload Progress:</div>
+                            <div style="background: #e5e7eb; height: 8px; border-radius: 4px; overflow: hidden;">
+                                <div id="upload-progress-bar" style="background: #3b82f6; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                            </div>
+                            <div id="upload-progress-text" style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">0%</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" onclick="closeUploadISOModal()" class="btn-cancel">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn-migrate" id="upload-iso-btn">
+                        <i class="ti ti-upload" style="margin-right: 0.5rem;"></i>Upload ISO
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal[style*="display: none"],
+.modal[style*="visibility: hidden"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.migration-modal {
+    max-width: 550px;
+    width: 90%;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e8e8e8;
+}
+
+.btn-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #999;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.btn-close:hover {
+    color: #333;
+}
+
+/* Form Sections */
+.form-section {
+    margin-bottom: 1rem;
+}
+
+.section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #666;
+    margin-bottom: 0.75rem;
+}
+
+.form-divider {
+    height: 1px;
+    background: #e8e8e8;
+    margin: 1.25rem 0;
+}
+
+/* Two-column layout */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-col {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Compact form controls */
+.compact-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: #333;
+}
+
+.compact-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.compact-input:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.1);
+}
+
+/* Modal Actions */
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid #e8e8e8;
+}
+
+.btn-cancel {
+    padding: 0.625rem 1.25rem;
+    background: transparent;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+    background: #f5f5f5;
+    border-color: #b0b0b0;
+    color: #333;
+}
+
+.btn-migrate {
+    padding: 0.625rem 1.5rem;
+    background: #0078d4;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(0, 120, 212, 0.2);
+}
+
+.btn-migrate:hover {
+    background: #106ebe;
+    box-shadow: 0 4px 8px rgba(0, 120, 212, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-migrate:active {
+    transform: translateY(0);
+}
+
+.btn-action {
+    padding: 0.5rem 0.875rem;
+    background: #0078d4;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0, 120, 212, 0.2);
+}
+
+.btn-action:hover {
+    background: #106ebe;
+    box-shadow: 0 2px 6px rgba(0, 120, 212, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-action:active {
+    transform: translateY(0);
+}
+
+.btn-action:disabled {
+    background: #d1d1d1;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-upload-iso {
+    padding: 0.5rem 1rem;
+    background: #0078d4;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 120, 212, 0.2);
+}
+
+.btn-upload-iso:hover {
+    background: #106ebe;
+    box-shadow: 0 2px 6px rgba(0, 120, 212, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-upload-iso:active {
+    transform: translateY(0);
+}
+
+.btn-upload-iso:disabled {
+    background: #d1d1d1;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+.btn-upload-iso i {
+    font-size: 1rem;
+}
+
+/* Remove old styles */
+.modal-body {
+    /* Removed - now inline */
+}
+
+.form-group {
+    /* Deprecated - using form-section instead */
+}
+
+.form-group label {
+    /* Deprecated - using compact-label instead */
+}
+
+.form-control {
+    /* Deprecated - using compact-input instead */
+}
+
+.form-control:focus {
+    /* Deprecated - using compact-input:focus instead */
+}
+
+.option-card {
+    padding: 2rem 1.5rem;
+    border: 2px solid #e1e4e8;
+    border-radius: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+}
+
+.option-card:hover {
+    border-color: #0078d4;
+    background-color: #f8f9fa;
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 120, 212, 0.15);
+}
+
+.option-card-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    transition: transform 0.3s ease;
+}
+
+.option-card:hover .option-card-icon {
+    transform: scale(1.1);
+}
+
+.template-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid #e1e4e8;
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    align-items: center;
+}
+
+.template-item:hover {
+    background-color: #f6f8fa;
+}
+
+.template-icon {
+    font-size: 2rem;
+    color: #0078d4;
+}
+
+.template-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.template-name {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.template-meta {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.template-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-icon {
+    padding: 0.5rem 1rem;
+    background: #0078d4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.btn-icon:hover {
+    background: #106ebe;
+}
+
+.btn-icon.btn-secondary {
+    background: #6c757d;
+}
+
+.btn-icon.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.btn-icon.btn-danger {
+    background: #dc3545;
+}
+
+.btn-icon.btn-danger:hover {
+    background: #c82333;
+}
+
+.status-running {
+    color: #4CAF50;
+    font-weight: 500;
+}
+
+.status-stopped {
+    color: #757575;
+    font-weight: 500;
+}
+</style>
+
+<script>
+console.log('=== SCRIPT TAG EXECUTING - VERSION 2024-12-09-v5 ===');
+console.log('Window object:', typeof window);
+console.log('Document ready state:', document.readyState);
+
+// Global variables from Flask context
+const CURRENT_CLUSTER_ID = '{{ current_cluster if current_cluster else "" }}';
+console.log('Template Builder initialized with cluster:', CURRENT_CLUSTER_ID);
+
+// Define functions in global scope IMMEDIATELY
+window.showCreateFromScratch = async function() {
+    console.log('✅ showCreateFromScratch called - VERSION v5');
+    try {
+        const modal = document.getElementById('build-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+            
+            // Trigger template sync to get latest templates from Proxmox
+            console.log('🔄 Triggering template sync to refresh from Proxmox...');
+            try {
+                await fetch('/api/sync/templates/trigger', { method: 'POST' });
+                console.log('✅ Template sync triggered');
+            } catch (syncErr) {
+                console.warn('⚠️ Template sync trigger failed (non-critical):', syncErr);
+            }
+            
+            loadBuildOptions();
+        } else {
+            console.error('build-modal element not found');
+        }
+    } catch (e) {
+        console.error('Error in showCreateFromScratch:', e);
+    }
+};
+
+window.showConvertExisting = async function() {
+    console.log('✅ showConvertExisting called - loading VMs');
+    
+    // Show modal
+    document.getElementById('convert-existing-modal').style.display = 'flex';
+    document.getElementById('convert-vm-loading').style.display = 'block';
+    document.getElementById('convert-vm-list').style.display = 'none';
+    document.getElementById('convert-vm-empty').style.display = 'none';
+    
+    try {
+        // Fetch user's VMs
+        const response = await fetch('/api/vms');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('VMs API response:', data);
+        
+        // Handle error response
+        if (data.error) {
+            throw new Error(data.message || data.error || 'Unknown error');
+        }
+        
+        // The /api/vms endpoint returns {vms: [...], is_admin: bool}
+        const vms = data.vms || [];
+        console.log('Found', vms.length, 'total VMs');
+        
+        // Filter to only QEMU VMs that are not already templates
+        const convertibleVMs = vms.filter(vm => 
+            vm.type === 'qemu' && 
+            vm.template !== 1
+        );
+        
+        console.log('Found', convertibleVMs.length, 'convertible VMs');
+        
+        document.getElementById('convert-vm-loading').style.display = 'none';
+        
+        if (convertibleVMs.length === 0) {
+            document.getElementById('convert-vm-empty').style.display = 'block';
+        } else {
+            document.getElementById('convert-vm-list').style.display = 'block';
+            displayConvertibleVMs(convertibleVMs);
+        }
+    } catch (error) {
+        console.error('Failed to load VMs:', error);
+        document.getElementById('convert-vm-loading').style.display = 'none';
+        document.getElementById('convert-vm-empty').style.display = 'block';
+        document.getElementById('convert-vm-empty').innerHTML = `
+            <i class="ti ti-alert-triangle" style="font-size: 3rem; display: block; margin-bottom: 1rem; color: #dc3545;"></i>
+            <p style="color: #dc3545; font-weight: 600;">Failed to load VMs</p>
+            <p style="font-size: 0.9rem; color: #666;">${error.message}</p>
+            <button onclick="closeConvertExistingModal()" class="btn-cancel" style="margin-top: 1rem;">Close</button>
+        `;
+    }
+};
+
+function displayConvertibleVMs(vms) {
+    const container = document.getElementById('convert-vm-cards');
+    container.innerHTML = vms.map(vm => `
+        <div class="vm-convert-card" style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem; cursor: pointer; transition: all 0.2s;" 
+             onclick="confirmConvertVM(${vm.vmid}, '${vm.name || 'VM ' + vm.vmid}')"
+             onmouseover="this.style.borderColor='#0078d4'; this.style.backgroundColor='#f5f5f5';"
+             onmouseout="this.style.borderColor='#ddd'; this.style.backgroundColor='white';">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div style="width: 40px; height: 40px; background: #e8f4f8; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                    <i class="ti ti-device-tv" style="font-size: 1.5rem; color: #0078d4;"></i>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 1rem;">${vm.name || 'VM ' + vm.vmid}</div>
+                    <div style="color: #666; font-size: 0.85rem;">
+                        VMID: ${vm.vmid} • Node: ${vm.node} • Status: ${vm.status}
+                    </div>
+                </div>
+                <div>
+                    <i class="ti ti-circle-arrow-right" style="font-size: 1.5rem; color: #0078d4;"></i>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function confirmConvertVM(vmid, vmname) {
+    if (!confirm(`Convert VM "${vmname}" to a template?\n\nWARNING: This action cannot be undone. The VM will become a template and can no longer be started directly.\n\nNote: If the VM is running, it will be stopped first. This may take up to 60 seconds.\n\nClick OK to proceed.`)) {
+        return;
+    }
+    
+    // Close the modal
+    closeConvertExistingModal();
+    
+    // Show loading indicator with animation
+    const loadingAlert = document.createElement('div');
+    loadingAlert.id = 'convert-loading-alert';
+    loadingAlert.style.cssText = 'position: fixed; top: 20px; right: 20px; background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%); color: white; padding: 1.25rem 1.75rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,120,212,0.4); z-index: 10000; display: flex; align-items: center; gap: 1rem; font-weight: 500; animation: slideIn 0.3s ease-out;';
+    loadingAlert.innerHTML = `
+        <div style="width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <div>
+            <div style="font-size: 1rem; margin-bottom: 0.25rem;">Converting "${vmname}" to template...</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">⏱️ This may take up to 60 seconds</div>
+        </div>
+    `;
+    
+    // Add animations if not already present
+    if (!document.getElementById('convert-animations')) {
+        const style = document.createElement('style');
+        style.id = 'convert-animations';
+        style.textContent = `
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(loadingAlert);
+    
+    try {
+        const response = await fetch(`/api/vm/${vmid}/convert-to-template`, { method: 'POST' });
+        const data = await response.json();
+        
+        // Remove loading indicator
+        const alert = document.getElementById('convert-loading-alert');
+        if (alert) alert.remove();
+        
+        if (data.ok) {
+            alert(`✅ VM "${vmname}" has been successfully converted to a template!\n\nIt will now appear in your "My Templates" list.`);
+            // Refresh both lists
+            loadTemplates();
+            loadMyVMs();
+        } else {
+            alert(`❌ Failed to convert VM to template: ${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        // Remove loading indicator
+        const alert = document.getElementById('convert-loading-alert');
+        if (alert) alert.remove();
+        
+        console.error('Error converting VM to template:', error);
+        alert(`❌ Failed to convert VM to template: ${error.message}`);
+    }
+}
+
+function closeConvertExistingModal() {
+    document.getElementById('convert-existing-modal').style.display = 'none';
+}
+
+// Edit VM hardware specs
+function editVM(vmid, vmname, cores, memory) {
+    document.getElementById('edit-vm-id').value = vmid;
+    document.getElementById('edit-vm-name-display').value = vmname;
+    document.getElementById('edit-vm-cores').value = cores;
+    document.getElementById('edit-vm-memory').value = memory;
+    document.getElementById('edit-vm-modal').style.display = 'flex';
+}
+
+function closeEditVMModal() {
+    document.getElementById('edit-vm-modal').style.display = 'none';
+}
+
+async function submitEditVM(event) {
+    event.preventDefault();
+    
+    const vmid = document.getElementById('edit-vm-id').value;
+    const cores = parseInt(document.getElementById('edit-vm-cores').value);
+    const memory = parseInt(document.getElementById('edit-vm-memory').value);
+    
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    
+    try {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="ti ti-hourglass"></i> Saving...';
+        
+        // Call Proxmox API to update VM config
+        const response = await fetch(`/api/vm/${vmid}/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cores, memory })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok || response.ok) {
+            alert('✅ VM hardware updated successfully!');
+            closeEditVMModal();
+            loadMyVMs(); // Refresh VM list
+            loadTemplates(); // Refresh template list (in case it was a template)
+        } else {
+            alert(`❌ Failed to update VM: ${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error updating VM:', error);
+        alert(`❌ Failed to update VM: ${error.message}`);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+}
+
+console.log('✅ Functions defined VERSION v5 - attached to window');
+console.log('✅ Window functions:', typeof window.showCreateFromScratch, typeof window.showConvertExisting);
+
+// Load user's templates
+async function loadTemplates() {
+    const loadingDiv = document.getElementById('templates-loading');
+    const listDiv = document.getElementById('templates-list');
+    
+    console.log('🔄 loadTemplates() called');
+    
+    if (!loadingDiv) {
+        console.error('❌ templates-loading element not found!');
+        return;
+    }
+    
+    if (!listDiv) {
+        console.error('❌ templates-list element not found!');
+        return;
+    }
+    
+    try {
+        console.log('🔄 Fetching templates from /api/templates...');
+        console.log('Current cluster ID:', CURRENT_CLUSTER_ID);
+        
+        const response = await fetch('/api/templates');
+        console.log('📥 Response status:', response.status, response.statusText);
+        console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ HTTP error:', response.status, errorText);
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Failed to load templates (HTTP ${response.status})</p>
+                <p style="color: #666; font-size: 0.9rem;">${errorText.substring(0, 200)}</p>`;
+            return;
+        }
+        
+        const responseText = await response.text();
+        console.log('📄 Raw response length:', responseText.length);
+        console.log('📄 Raw response preview:', responseText.substring(0, 500));
+        
+        let data;
+        try {
+            data = JSON.parse(responseText);
+            console.log('✅ Parsed JSON data:', data);
+        } catch (parseError) {
+            console.error('❌ JSON parse error:', parseError);
+            console.error('Response was:', responseText.substring(0, 1000));
+            loadingDiv.innerHTML = '<p style="color: #d32f2f;">Invalid JSON response from server</p>';
+            return;
+        }
+        
+        if (!data.ok) {
+            console.error('❌ API returned ok=false:', data.error);
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Failed to load templates: ${data.error || 'Unknown error'}</p>`;
+            return;
+        }
+        
+        if (!data.templates) {
+            console.error('❌ No templates array in response, got:', Object.keys(data));
+            loadingDiv.innerHTML = '<p style="color: #d32f2f;">Invalid API response format (missing templates array)</p>';
+            return;
+        }
+        
+        if (data.templates.length === 0) {
+            console.log('ℹ️ No templates found in database');
+            loadingDiv.innerHTML = '<p style="color: #666;">No templates found. Create your first template above!</p>';
+            return;
+        }
+        
+        console.log(`✅ Successfully loaded ${data.templates.length} templates:`, data.templates.map(t => `${t.name} (${t.proxmox_vmid})`));
+        loadingDiv.style.display = 'none';
+        listDiv.style.display = 'block';
+        
+        listDiv.innerHTML = data.templates.map(template => `
+            <div class="template-item">
+                <div class="template-icon">
+                    <i class="ti ti-database"></i>
+                </div>
+                <div class="template-info">
+                    <div class="template-name">${template.name || 'VM ' + template.proxmox_vmid}</div>
+                    <div class="template-meta">
+                        VMID: ${template.proxmox_vmid} | 
+                        Node: ${template.node || 'N/A'} | 
+                        ${template.cores || template.cpu_cores || 2} cores, ${template.memory || template.memory_mb || 2048}MB RAM
+                    </div>
+                </div>
+                <div class="template-actions">
+                    <button class="btn-icon" onclick="useTemplate(${template.id})">
+                        <i class="ti ti-player-play"></i> Use in Class
+                    </button>
+                    <button class="btn-icon btn-secondary" onclick="editTemplate(${template.proxmox_vmid}, '${(template.name || 'VM ' + template.proxmox_vmid).replace(/'/g, "\\'")}', ${template.cores || template.cpu_cores || 2}, ${template.memory || template.memory_mb || 2048})">
+                        <i class="ti ti-pencil"></i> Edit
+                    </button>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('❌ Exception loading templates:', error);
+        console.error('Stack trace:', error.stack);
+        if (loadingDiv) {
+            loadingDiv.innerHTML = '<p style="color: #d32f2f;">Failed to load templates: ' + error.message + '</p>';
+        }
+    }
+}
+
+function useTemplate(templateId) {
+    console.log('🎯 useTemplate called with template ID:', templateId);
+    console.log('Redirecting to:', `/classes/create?template=${templateId}`);
+    // Redirect to class creation with this template
+    window.location.href = `/classes/create?template=${templateId}`;
+}
+
+function editTemplate(vmid, vmname, cores, memory) {
+    // Templates are just VMs that have been marked as templates
+    // Use the same edit modal as regular VMs
+    editVM(vmid, vmname, cores, memory);
+}
+
+// Load My VMs (non-template VMs created via builder)
+async function loadMyVMs() {
+    const loadingDiv = document.getElementById('vms-loading');
+    const listDiv = document.getElementById('vms-list');
+    
+    console.log('🔄 loadMyVMs() called');
+    
+    if (!loadingDiv) {
+        console.error('❌ vms-loading element not found!');
+        return;
+    }
+    
+    if (!listDiv) {
+        console.error('❌ vms-list element not found!');
+        return;
+    }
+    
+    try {
+        console.log('🔄 Fetching VMs from /api/vms...');
+        
+        const response = await fetch('/api/vms');
+        
+        if (!response.ok) {
+            console.error(`❌ HTTP error ${response.status}: ${response.statusText}`);
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Failed to load VMs (HTTP ${response.status})</p>
+                                    <button onclick="loadMyVMs()" class="btn-secondary" style="margin-top: 1rem;">
+                                        <i class="ti ti-refresh"></i> Retry
+                                    </button>`;
+            return;
+        }
+        
+        const data = await response.json();
+        console.log('📦 VMs API response:', data);
+        
+        // Handle actual API format: {"vms": [...], "is_admin": ...}
+        let vmList;
+        if (Array.isArray(data)) {
+            vmList = data;
+        } else if (data.vms && Array.isArray(data.vms)) {
+            vmList = data.vms;
+        } else if (data.data && Array.isArray(data.data)) {
+            vmList = data.data;
+        } else if (data.error) {
+            console.error('❌ API returned error:', data.error);
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Failed to load VMs: ${data.error || 'Unknown error'}</p>`;
+            return;
+        } else {
+            console.error('❌ API response does not contain valid VM array:', data);
+            loadingDiv.innerHTML = `<p style="color: #d32f2f;">Invalid response format</p>`;
+            return;
+        }
+        
+        // Filter to builder VMs only (VMs created via Template Builder that aren't templates yet)
+        // is_builder_vm flag is set by backend: VMAssignment with class_id=NULL and assigned to current user
+        const vms = vmList.filter(vm => vm.is_builder_vm === true);
+        
+        console.log(`✅ Successfully loaded ${vms.length} builder VMs (${vmList.length} total VMs)`);
+        loadingDiv.style.display = 'none';
+        listDiv.style.display = 'block';
+        
+        if (vms.length === 0) {
+            listDiv.innerHTML = '<p style="text-align: center; color: #666; padding: 2rem;">No VMs yet. Use "Build VM from Scratch" to create one.</p>';
+            return;
+        }
+        
+        listDiv.innerHTML = vms.map(vm => {
+            const statusClass = vm.status === 'running' ? 'status-running' : 'status-stopped';
+            const statusIcon = vm.status === 'running' ? 'play-circle-fill' : 'stop-circle';
+            const statusText = vm.status === 'running' ? 'Running' : 'Stopped';
+            
+            return `
+            <div class="template-item">
+                <div class="template-icon">
+                    <i class="ti ti-device-desktop"></i>
+                </div>
+                <div class="template-info">
+                    <div class="template-name">${vm.name || 'VM ' + vm.vmid}</div>
+                    <div class="template-meta">
+                        <span class="${statusClass}">
+                        <i class="ti ti-${statusIcon}"></i> ${statusText}
+                        </span> | 
+                        VMID: ${vm.vmid} | 
+                        Node: ${vm.node || 'N/A'} | 
+                        ${vm.cores || 2} cores, ${vm.memory || 2048}MB RAM
+                        ${vm.ip && vm.ip !== 'N/A' ? ` | IP: ${vm.ip}` : ''}
+                    </div>
+                </div>
+                <div class="template-actions">
+                    <button class="btn-icon" onclick='openConsole(${vm.vmid}, ${JSON.stringify(vm.name || ("VM " + vm.vmid))}, ${JSON.stringify(vm.cluster_id || CURRENT_CLUSTER_ID || "")})' title="Open Console">
+                        <i class="ti ti-terminal"></i> Console
+                    </button>
+                    <button class="btn-icon btn-secondary" onclick="editVM(${vm.vmid}, '${vm.name}', ${vm.cores || 2}, ${vm.memory || 2048})" title="Edit Hardware Specs">
+                        <i class="ti ti-pencil"></i> Edit
+                    </button>
+                    ${vm.has_iso || vm.cdrom ? `
+                    <button class="btn-icon btn-secondary" onclick="ejectISO(${vm.vmid})" title="Eject Installation Media">
+                        <i class="ti ti-player-eject"></i> Eject ISO
+                    </button>
+                    ` : ''}
+                    ${vm.status !== 'running' ? `
+                    <button class="btn-icon btn-secondary" onclick="startVM(${vm.vmid})">
+                        <i class="ti ti-player-play-filled"></i> Start
+                    </button>
+                    ` : `
+                    <button class="btn-icon btn-secondary" onclick="stopVM(${vm.vmid})">
+                        <i class="ti ti-player-stop-filled"></i> Stop
+                    </button>
+                    `}
+                </div>
+            </div>
+        `}).join('');
+        
+    } catch (error) {
+        console.error('❌ Exception loading VMs:', error);
+        console.error('Stack trace:', error.stack);
+        if (loadingDiv) {
+            loadingDiv.innerHTML = '<p style="color: #d32f2f;">Failed to load VMs: ' + error.message + '</p>';
+        }
+    }
+}
+
+async function startVM(vmid) {
+    try {
+        const response = await fetch(`/api/vm/${vmid}/start`, { method: 'POST' });
+        const data = await response.json();
+        if (data.ok) {
+            alert(`VM ${vmid} is starting...`);
+            setTimeout(() => loadMyVMs(), 2000); // Refresh after 2 seconds
+        } else {
+            alert(`Failed to start VM: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Failed to start VM: ${error.message}`);
+    }
+}
+
+async function stopVM(vmid) {
+    try {
+        const response = await fetch(`/api/vm/${vmid}/stop`, { method: 'POST' });
+        const data = await response.json();
+        if (data.ok) {
+            alert(`VM ${vmid} is stopping...`);
+            setTimeout(() => loadMyVMs(), 2000); // Refresh after 2 seconds
+        } else {
+            alert(`Failed to stop VM: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Failed to stop VM: ${error.message}`);
+    }
+}
+
+async function ejectISO(vmid) {
+    if (!confirm(`Eject installation media from VM ${vmid}?\n\nThis will remove the ISO from the CD/DVD drive so the VM can boot from disk.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/vm/${vmid}/eject-iso`, { method: 'POST' });
+        const data = await response.json();
+        if (data.ok) {
+            alert(`Installation media ejected from VM ${vmid}. You can now boot from disk.`);
+            setTimeout(() => loadMyVMs(), 1000); // Refresh after 1 second
+        } else {
+            alert(`Failed to eject ISO: ${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error ejecting ISO:', error);
+        alert(`Failed to eject ISO: ${error.message}`);
+    }
+}
+
+// Load templates on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🎬 DOMContentLoaded event fired');
+    console.log('🔧 Template builder page initialized');
+    
+    // Attach click event listeners to buttons
+    const btnCreateFromScratch = document.getElementById('btn-create-from-scratch');
+    const btnConvertExisting = document.getElementById('btn-convert-existing');
+    
+    console.log('🔍 Button elements:', {
+        btnCreateFromScratch: btnCreateFromScratch,
+        btnConvertExisting: btnConvertExisting
+    });
+    
+    if (btnCreateFromScratch) {
+        btnCreateFromScratch.addEventListener('click', function(e) {
+            console.log('🖱️ Create from scratch clicked');
+            e.preventDefault();
+            showCreateFromScratch();
+        });
+        console.log('✅ Attached listener to btn-create-from-scratch');
+    } else {
+        console.error('❌ btn-create-from-scratch not found in DOM');
+    }
+    
+    if (btnConvertExisting) {
+        btnConvertExisting.addEventListener('click', function(e) {
+            console.log('🖱️ Convert existing clicked');
+            e.preventDefault();
+            showConvertExisting();
+        });
+        console.log('✅ Attached listener to btn-convert-existing');
+    } else {
+        console.error('❌ btn-convert-existing not found in DOM');
+    }
+    
+    console.log('📋 Starting template load...');
+    loadTemplates();
+    loadMyVMs();
+    console.log('🎉 Template builder initialization complete');
+});
+
+// Build VM from Scratch functions
+function toggleStartMethod() {
+    const startMethod = document.getElementById('build-start-method').value;
+    const isoSection = document.getElementById('iso-section');
+    const templateSection = document.getElementById('template-section');
+    const isoUploadSection = document.getElementById('iso-upload-section');
+    const hardwareSection = document.getElementById('hardware-section');
+    const osTypeField = document.getElementById('build-os-type');
+    const isoField = document.getElementById('build-iso');
+    const templateField = document.getElementById('build-template');
+    
+    if (startMethod === 'iso') {
+        // Show ISO selection, hide template selection
+        isoSection.style.display = 'grid';
+        templateSection.style.display = 'none';
+        isoUploadSection.style.display = 'flex';
+        hardwareSection.style.display = 'block';
+        
+        // Make ISO fields required, template optional
+        osTypeField.required = true;
+        isoField.required = true;
+        templateField.required = false;
+    } else {
+        // Show template selection, hide ISO selection
+        isoSection.style.display = 'none';
+        templateSection.style.display = 'grid';
+        isoUploadSection.style.display = 'none';
+        hardwareSection.style.display = 'none';  // Templates use their own hardware specs
+        
+        // Make template required, ISO fields optional
+        osTypeField.required = false;
+        isoField.required = false;
+        templateField.required = true;
+        
+        // Load templates if not already loaded
+        loadTemplatesForBuild();
+    }
+}
+
+async function loadTemplatesForBuild() {
+    try {
+        const clusterId = CURRENT_CLUSTER_ID;
+        console.log('Loading templates for cluster:', clusterId);
+        
+        if (!clusterId || clusterId === 'None' || clusterId === '') {
+            console.error('No valid cluster ID available');
+            document.getElementById('build-template').innerHTML = '<option value="">No cluster selected - Please refresh page</option>';
+            return;
+        }
+        
+        // Get cluster IP from cluster ID using AVAILABLE_CLUSTERS
+        let clusterIp = null;
+        if (typeof AVAILABLE_CLUSTERS !== 'undefined') {
+            for (const cluster of AVAILABLE_CLUSTERS) {
+                if (cluster.id === clusterId) {
+                    clusterIp = cluster.host;
+                    break;
+                }
+            }
+        }
+        
+        if (!clusterIp) {
+            console.error('Could not find cluster IP for cluster ID:', clusterId);
+            // Fallback: just use cluster_id parameter instead
+            console.log('Using cluster_id parameter as fallback');
+        }
+        
+        // Load templates from API (use cluster_ip if available, otherwise cluster_id)
+        // Add cache-busting parameter to get fresh data
+        const apiUrl = clusterIp 
+            ? `/api/templates?cluster_ip=${clusterIp}&_t=${Date.now()}` 
+            : `/api/templates?cluster_id=${clusterId}&_t=${Date.now()}`;
+        const templateResponse = await fetch(apiUrl);
+        const templateData = await templateResponse.json();
+        
+        console.log('Template response:', templateData);
+        
+        if (!templateData.ok) {
+            console.error('Template API returned error:', templateData.error);
+            document.getElementById('build-template').innerHTML = `<option value="">Error: ${templateData.error || 'Unknown error'}</option>`;
+            return;
+        }
+        
+        if (templateData.templates && templateData.templates.length > 0) {
+            const templateSelect = document.getElementById('build-template');
+            templateSelect.innerHTML = templateData.templates.map(tmpl => {
+                const specs = tmpl.cores && tmpl.memory ? ` (${tmpl.cores} cores, ${(tmpl.memory / 1024).toFixed(1)}GB RAM)` : '';
+                return `<option value="${tmpl.proxmox_vmid}" data-node="${tmpl.node}" data-cores="${tmpl.cores || 2}" data-memory="${tmpl.memory || 2048}">${tmpl.name} - ${tmpl.node}${specs}</option>`;
+            }).join('');
+            console.log(`Loaded ${templateData.templates.length} templates`);
+        } else {
+            const templateSelect = document.getElementById('build-template');
+            templateSelect.innerHTML = '<option value="">No templates found - Create templates first</option>';
+            console.warn('No templates found in response');
+        }
+    } catch (error) {
+        console.error('Failed to load templates:', error);
+        document.getElementById('build-template').innerHTML = '<option value="">Error loading templates - Check console</option>';
+    }
+}
+
+async function loadBuildOptions() {
+    try {
+        // Get current cluster_id from session (injected by Flask context processor)
+        const clusterId = CURRENT_CLUSTER_ID;
+        console.log('Loading ISOs for cluster:', clusterId);
+        
+        if (!clusterId || clusterId === 'None' || clusterId === '') {
+            console.error('No valid cluster ID available');
+            document.getElementById('build-iso').innerHTML = '<option value="">No cluster selected - Please refresh page</option>';
+            return;
+        }
+        
+        // Load ISOs from all nodes (cached in background)
+        const isoResponse = await fetch(`/api/vm-builder/isos?cluster_id=${clusterId}`);
+        const isoData = await isoResponse.json();
+        
+        console.log('ISO response:', isoData);
+        
+        if (!isoData.ok) {
+            console.error('ISO API returned error:', isoData.error);
+            document.getElementById('build-iso').innerHTML = `<option value="">Error: ${isoData.error || 'Unknown error'}</option>`;
+            return;
+        }
+        
+        if (isoData.isos && isoData.isos.length > 0) {
+            // Filter out container templates - only show actual ISO files
+            const actualISOs = isoData.isos.filter(iso => {
+                const filename = iso.name.toLowerCase();
+                return filename.endsWith('.iso');
+            });
+            
+            if (actualISOs.length > 0) {
+                const isoSelect = document.getElementById('build-iso');
+                isoSelect.innerHTML = actualISOs.map(iso => 
+                    `<option value="${iso.volid}" data-node="${iso.node}" data-storage="${iso.storage}">${iso.name} - ${iso.node}/${iso.storage} (${(iso.size / 1073741824).toFixed(2)}GB)</option>`
+                ).join('');
+                console.log(`Loaded ${actualISOs.length} ISO files (filtered out ${isoData.isos.length - actualISOs.length} container templates)`);
+            } else {
+                const isoSelect = document.getElementById('build-iso');
+                isoSelect.innerHTML = '<option value="">No ISO files found - Upload ISO to TRUENAS-NFS storage first</option>';
+                console.warn('All files were container templates, no actual ISOs found');
+            }
+        } else {
+            const isoSelect = document.getElementById('build-iso');
+            isoSelect.innerHTML = '<option value="">No ISOs found - Upload ISO to TRUENAS-NFS storage first</option>';
+            console.warn('No ISOs found in response');
+        }
+    } catch (error) {
+        console.error('Failed to load build options:', error);
+        document.getElementById('build-iso').innerHTML = '<option value="">Error loading ISOs - Check console</option>';
+    }
+}
+
+function closeBuildModal() {
+    document.getElementById('build-modal').style.display = 'none';
+    document.getElementById('build-form').reset();
+    // Reset to ISO mode
+    toggleStartMethod();
+}
+
+async function submitBuildVM(event) {
+    event.preventDefault();
+    
+    const startMethod = document.getElementById('build-start-method').value;
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ti ti-hourglass"></i> Building VM...';
+    
+    try {
+        let formData;
+        let endpoint;
+        
+        if (startMethod === 'iso') {
+            // ISO-based build
+            const isoSelect = document.getElementById('build-iso');
+            const isoFile = isoSelect.value;
+            
+            // Validate ISO is selected
+            if (!isoFile) {
+                alert('Please select an ISO image.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="ti ti-player-play"></i> Build VM';
+                return;
+            }
+            
+            // Get node from selected option's data attribute
+            const selectedOption = isoSelect.options[isoSelect.selectedIndex];
+            const targetNode = selectedOption.getAttribute('data-node');
+            
+            formData = {
+                vm_name: document.getElementById('build-vm-name').value,
+                os_type: document.getElementById('build-os-type').value,
+                iso_file: isoFile,
+                target_node: targetNode,  // Include node hint for fast deployment
+                storage: 'TRUENAS-NFS',
+                cpu_cores: parseInt(document.getElementById('build-cpu-cores').value),
+                memory_mb: parseInt(document.getElementById('build-memory').value),
+                disk_size_gb: parseInt(document.getElementById('build-disk-size').value),
+                network_bridge: document.getElementById('build-network-bridge').value,
+                agent_enabled: true,  // Always enabled
+                convert_to_template: document.getElementById('build-convert-template').checked
+            };
+            
+            endpoint = '/api/vm-builder/build';
+            
+        } else {
+            // Template-based build (clone)
+            const templateSelect = document.getElementById('build-template');
+            const templateVmid = templateSelect.value;
+            
+            // Validate template is selected
+            if (!templateVmid) {
+                alert('Please select a template.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="ti ti-player-play"></i> Build VM';
+                return;
+            }
+            
+            // Get node and specs from selected option's data attributes
+            const selectedOption = templateSelect.options[templateSelect.selectedIndex];
+            const targetNode = selectedOption.getAttribute('data-node');
+            
+            formData = {
+                vm_name: document.getElementById('build-vm-name').value,
+                template_vmid: parseInt(templateVmid),
+                target_node: targetNode,
+                storage: 'TRUENAS-NFS',
+                convert_to_template: document.getElementById('build-convert-template').checked
+            };
+            
+            endpoint = '/api/vm-builder/clone-from-template';
+        }
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+        
+        // Check if response is OK before parsing
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Build API error:', response.status, response.statusText, errorText);
+            throw new Error(`Server returned ${response.status}: ${errorText.substring(0, 200)}`);
+        }
+        
+        // Check content type to ensure it's JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const responseText = await response.text();
+            console.error('Non-JSON response received:', responseText);
+            throw new Error(`Server returned non-JSON response (${contentType}). This usually means a server error occurred. Check server logs. Response: ${responseText.substring(0, 200)}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            closeBuildModal();
+            
+            // Show success modal with console option
+            document.getElementById('build-success-message').textContent = data.message;
+            document.getElementById('build-success-vmid').textContent = data.vmid;
+            const successModal = document.getElementById('build-success-modal');
+            successModal.setAttribute('data-vmid', data.vmid);
+            successModal.setAttribute('data-vm-name', formData.vm_name);
+            successModal.setAttribute('data-cluster-id', CURRENT_CLUSTER_ID || '');
+            successModal.style.display = 'flex';
+            successModal.style.visibility = 'visible';
+            
+            // Auto-start the VM after creation (unless converted to template)
+            if (!formData.convert_to_template) {
+                console.log(`🚀 Auto-starting VM ${data.vmid}...`);
+                fetch(`/api/vm/${data.vmid}/start`, { method: 'POST' })
+                    .then(resp => resp.json())
+                    .then(result => {
+                        if (result.ok) {
+                            console.log(`✅ VM ${data.vmid} started successfully`);
+                        } else {
+                            console.warn(`⚠️ Failed to auto-start VM ${data.vmid}: ${result.error}`);
+                        }
+                    })
+                    .catch(err => console.error(`❌ Failed to auto-start VM ${data.vmid}:`, err));
+            }
+            
+            // Refresh both templates and My Template VMs sections
+            setTimeout(() => {
+                loadTemplates();
+                loadMyVMs();
+            }, 3000);
+        } else {
+            alert('Build failed: ' + (data.error || 'Unknown error'));
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="ti ti-player-play"></i> Build VM';
+        }
+    } catch (error) {
+        console.error('Build failed:', error);
+        alert('Build failed: ' + error.message);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-player-play"></i> Build VM';
+    }
+}
+
+function closeBuildSuccessModal() {
+    const modal = document.getElementById('build-success-modal');
+    modal.style.display = 'none';
+    modal.style.visibility = 'hidden';
+}
+
+async function openConsoleFromSuccess() {
+    const modal = document.getElementById('build-success-modal');
+    const vmid = modal.getAttribute('data-vmid');
+    const vmName = modal.getAttribute('data-vm-name');
+    const clusterId = modal.getAttribute('data-cluster-id') || CURRENT_CLUSTER_ID || '';
+    
+    closeBuildSuccessModal();
+    await openConsole(vmid, vmName, clusterId);
+}
+
+async function openConsole(vmid, vmName, clusterId = '') {
+    try {
+        // Use the same console view as the main portal (with WebSocket proxy and ticket auth)
+        // This avoids 401 errors from direct Proxmox console URLs
+        document.getElementById('console-vm-name').textContent = vmName || `VM ${vmid}`;
+        const resolvedClusterId = clusterId || CURRENT_CLUSTER_ID || '';
+        const consoleUrl = resolvedClusterId
+            ? `/api/console/${vmid}/view2?cluster_id=${encodeURIComponent(resolvedClusterId)}`
+            : `/api/console/${vmid}/view2`;
+        document.getElementById('console-frame').src = consoleUrl;
+        
+        // Show console modal
+        const consoleModal = document.getElementById('console-modal');
+        consoleModal.style.display = 'flex';
+        consoleModal.style.visibility = 'visible';
+    } catch (error) {
+        console.error('Failed to open console:', error);
+        alert('Failed to open console: ' + error.message);
+    }
+}
+
+function closeConsoleModal() {
+    const modal = document.getElementById('console-modal');
+    modal.style.display = 'none';
+    modal.style.visibility = 'hidden';
+    document.getElementById('console-frame').src = '';
+}
+
+// Upload ISO functions
+async function openUploadISOModal() {
+    const modal = document.getElementById('upload-iso-modal');
+    modal.style.display = 'flex';
+    modal.style.visibility = 'visible';
+    
+    // Load available clusters
+    await loadUploadClusters();
+}
+
+async function loadUploadClusters() {
+    try {
+        const response = await fetch('/api/clusters');
+        const data = await response.json();
+        
+        const select = document.getElementById('upload-cluster');
+        select.innerHTML = '<option value="">Select Cluster...</option>';
+        
+        if (data.clusters && data.clusters.length > 0) {
+            data.clusters.forEach(cluster => {
+                const option = document.createElement('option');
+                option.value = cluster.id;
+                option.textContent = cluster.name || `Cluster ${cluster.id}`;
+                select.appendChild(option);
+            });
+            
+            // Auto-select current cluster if available
+            if (CURRENT_CLUSTER_ID) {
+                select.value = CURRENT_CLUSTER_ID;
+                await loadUploadNodes();
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load clusters:', error);
+        alert('Failed to load clusters: ' + error.message);
+    }
+}
+
+async function loadUploadNodes() {
+    const clusterId = document.getElementById('upload-cluster').value;
+    const nodeSelect = document.getElementById('upload-node');
+    const storageSelect = document.getElementById('upload-storage');
+    const storageVerification = document.getElementById('storage-verification');
+    
+    if (!clusterId) {
+        nodeSelect.innerHTML = '<option value="">Select cluster first...</option>';
+        storageSelect.innerHTML = '<option value="">Select node first...</option>';
+        storageVerification.style.display = 'none';
+        return;
+    }
+    
+    nodeSelect.innerHTML = '<option value="">Loading nodes...</option>';
+    storageSelect.innerHTML = '<option value="">Select node first...</option>';
+    
+    try {
+        const response = await fetch(`/api/vm-builder/nodes?cluster_id=${clusterId}`);
+        const data = await response.json();
+        
+        nodeSelect.innerHTML = '<option value="">Select Node...</option>';
+        
+        if (data.ok && data.nodes && data.nodes.length > 0) {
+            data.nodes.forEach(node => {
+                const option = document.createElement('option');
+                option.value = node.node;
+                option.textContent = `${node.node} (${node.status})`;
+                nodeSelect.appendChild(option);
+            });
+            
+            // Auto-select first online node
+            const firstOnline = data.nodes.find(n => n.status === 'online');
+            if (firstOnline) {
+                nodeSelect.value = firstOnline.node;
+                await loadUploadStorages();
+            }
+        } else {
+            nodeSelect.innerHTML = '<option value="">No nodes available</option>';
+        }
+    } catch (error) {
+        console.error('Failed to load nodes:', error);
+        nodeSelect.innerHTML = '<option value="">Error loading nodes</option>';
+    }
+}
+
+async function loadUploadStorages() {
+    const clusterId = document.getElementById('upload-cluster').value;
+    const node = document.getElementById('upload-node').value;
+    const storageSelect = document.getElementById('upload-storage');
+    const verificationDiv = document.getElementById('storage-verification');
+    
+    if (!clusterId || !node) {
+        storageSelect.innerHTML = '<option value="">Select node first...</option>';
+        verificationDiv.style.display = 'none';
+        return;
+    }
+    
+    storageSelect.innerHTML = '<option value="">Loading storages...</option>';
+    verificationDiv.style.display = 'none';
+    
+    try {
+        // Add timeout to request (5 seconds max)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`/api/vm-builder/storages?cluster_id=${clusterId}&node=${node}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        const data = await response.json();
+        
+        storageSelect.innerHTML = '<option value="">Select storage...</option>';
+        
+        if (data.ok && data.storages) {
+            // Filter storages that support ISO content
+            const isoStorages = data.storages.filter(s => 
+                s.content && 
+                s.content.includes('iso')
+            );
+            
+            if (isoStorages.length > 0) {
+                isoStorages.forEach(storage => {
+                    const option = document.createElement('option');
+                    option.value = storage.storage;
+                    const availSpace = storage.avail ? ` - ${storage.avail} free` : '';
+                    option.textContent = `${storage.storage}${availSpace}`;
+                    storageSelect.appendChild(option);
+                });
+                
+                // Auto-select first storage (onchange will trigger verification)
+                storageSelect.value = isoStorages[0].storage;
+                // Manually trigger change event to ensure verification runs
+                storageSelect.dispatchEvent(new Event('change'));
+            } else {
+                storageSelect.innerHTML = '<option value="">No ISO storages available</option>';
+                verificationDiv.style.display = 'block';
+                verificationDiv.innerHTML = `
+                    <div style="color: #856404; background: #fff3cd; padding: 0.5rem; border-radius: 0.375rem;">
+                        ⚠️ No storages with ISO support found on ${node}
+                    </div>
+                `;
+            }
+        } else {
+            storageSelect.innerHTML = '<option value="">Error loading storages</option>';
+        }
+    } catch (error) {
+        console.error('Failed to load storages:', error);
+        const errorMsg = error.name === 'AbortError' ? 'Request timed out' : error.message;
+        storageSelect.innerHTML = '<option value="">Error loading storages</option>';
+        verificationDiv.style.display = 'block';
+        verificationDiv.innerHTML = `
+            <div style="color: #856404; background: #fff3cd; padding: 0.5rem; border-radius: 0.375rem;">
+                ⚠️ Could not load storages (${errorMsg})
+            </div>
+        `;
+    }
+}
+
+async function verifyUploadStorage() {
+    const clusterId = document.getElementById('upload-cluster').value;
+    const node = document.getElementById('upload-node').value;
+    const storage = document.getElementById('upload-storage').value;
+    const verificationDiv = document.getElementById('storage-verification');
+    
+    if (!node || !storage) {
+        verificationDiv.style.display = 'none';
+        return;
+    }
+    
+    verificationDiv.style.display = 'block';
+    verificationDiv.innerHTML = '<div style="color: #666;">🔄 Verifying storage...</div>';
+    
+    try {
+        // Add timeout to verification request (5 seconds max)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`/api/vm-builder/storages?cluster_id=${clusterId}&node=${node}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        const data = await response.json();
+        
+        if (data.ok && data.storages) {
+            const storageInfo = data.storages.find(s => 
+                s.node === node && 
+                s.storage === storage
+            );
+            
+            if (storageInfo) {
+                const supportsISO = storageInfo.content && storageInfo.content.includes('iso');
+                if (supportsISO) {
+                    verificationDiv.innerHTML = `
+                        <div style="color: #0b6a0b; background: #d1f4d1; padding: 0.5rem; border-radius: 0.375rem;">
+                            ✅ Storage verified: ${storage} on ${node}
+                            <br><small>Available space: ${storageInfo.avail || 'Unknown'}</small>
+                        </div>
+                    `;
+                } else {
+                    verificationDiv.innerHTML = `
+                        <div style="color: #a80000; background: #ffe5e5; padding: 0.5rem; border-radius: 0.375rem;">
+                            ❌ Storage ${storage} does not support ISO content
+                        </div>
+                    `;
+                }
+            } else {
+                verificationDiv.innerHTML = `
+                    <div style="color: #856404; background: #fff3cd; padding: 0.5rem; border-radius: 0.375rem;">
+                        ⚠️ Storage ${storage} not found on ${node}
+                    </div>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to verify storage:', error);
+        // Don't block upload on verification failure - just show warning
+        const errorMsg = error.name === 'AbortError' ? 'Verification timed out' : error.message;
+        verificationDiv.innerHTML = `
+            <div style="color: #856404; background: #fff3cd; padding: 0.5rem; border-radius: 0.375rem;">
+                ⚠️ Could not verify storage (${errorMsg})
+                <br><small>You can still proceed with the upload</small>
+            </div>
+        `;
+    }
+}
+
+// Global variable to track active upload
+let activeUploadXHR = null;
+
+function toggleUploadMethod() {
+    const method = document.querySelector('input[name="upload-method"]:checked').value;
+    const fileSection = document.getElementById('upload-file-section');
+    const urlSection = document.getElementById('upload-url-section');
+    const fileInput = document.getElementById('upload-iso-file');
+    const urlInput = document.getElementById('upload-iso-url');
+    
+    if (method === 'file') {
+        fileSection.style.display = '';
+        urlSection.style.display = 'none';
+        fileInput.required = true;
+        urlInput.required = false;
+        urlInput.value = '';
+    } else {
+        fileSection.style.display = 'none';
+        urlSection.style.display = '';
+        fileInput.required = false;
+        urlInput.required = true;
+        fileInput.value = '';
+    }
+}
+
+function closeUploadISOModal() {
+    const modal = document.getElementById('upload-iso-modal');
+    
+    // If upload is in progress, confirm cancellation
+    if (activeUploadXHR) {
+        if (confirm('Upload is in progress. Are you sure you want to cancel?')) {
+            activeUploadXHR.abort();
+            activeUploadXHR = null;
+        } else {
+            return; // Don't close modal
+        }
+    }
+    
+    modal.style.display = 'none';
+    modal.style.visibility = 'hidden';
+    document.getElementById('upload-iso-form').reset();
+    document.getElementById('upload-progress').style.display = 'none';
+    document.getElementById('upload-iso-btn').disabled = false;
+    document.getElementById('upload-iso-btn').innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+}
+
+async function submitUploadISO(event) {
+    event.preventDefault();
+    
+    const method = document.querySelector('input[name="upload-method"]:checked').value;
+    const clusterId = document.getElementById('upload-cluster').value;
+    const node = document.getElementById('upload-node').value;
+    const storage = document.getElementById('upload-storage').value;
+    
+    if (!clusterId || !node || !storage) {
+        alert('Please select cluster, node, and storage');
+        return;
+    }
+    
+    if (method === 'file') {
+        await submitFileUpload();
+    } else {
+        await submitURLDownload();
+    }
+}
+
+async function submitFileUpload() {
+    const fileInput = document.getElementById('upload-iso-file');
+    const file = fileInput.files[0];
+    const clusterId = document.getElementById('upload-cluster').value;
+    const node = document.getElementById('upload-node').value;
+    const storage = document.getElementById('upload-storage').value;
+    
+    if (!file) {
+        alert('Please select an ISO file');
+        return;
+    }
+    
+    const submitBtn = document.getElementById('upload-iso-btn');
+    const progressDiv = document.getElementById('upload-progress');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const progressText = document.getElementById('upload-progress-text');
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ti ti-hourglass"></i> Uploading...';
+    
+    // Show progress bar
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressBar.style.transition = 'width 0.3s ease';
+    progressText.textContent = 'Preparing upload...';
+    
+    try {
+        progressText.textContent = `Uploading ${file.name} to server...`;
+        
+        // Create FormData for Flask upload (Flask will stream to Proxmox)
+        const formData = new FormData();
+        formData.append('content', file);  // The actual file
+        formData.append('node', node);
+        formData.append('storage', storage);
+        formData.append('cluster_id', clusterId);
+        
+        // Upload with progress tracking using XHR
+        const xhr = new XMLHttpRequest();
+        activeUploadXHR = xhr; // Track for cancellation
+        
+        // Keep-alive mechanism to prevent connection timeout
+        let lastProgressTime = Date.now();
+        const uploadStartTime = Date.now();
+        const keepAliveInterval = setInterval(() => {
+        }, 5000);
+        
+        xhr.upload.addEventListener('progress', (e) => {
+            lastProgressTime = Date.now();
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                const loadedMB = (e.loaded / 1048576).toFixed(1);
+                const totalMB = (e.total / 1048576).toFixed(1);
+                const elapsedSeconds = (Date.now() - uploadStartTime) / 1000;
+                const speedMBps = elapsedSeconds > 0 ? (e.loaded / 1048576) / elapsedSeconds : 0;
+                
+                // Scale progress to 0-50% for upload phase
+                progressBar.style.width = (percentComplete / 2) + '%';
+                progressText.textContent = 
+                    `Step 1/2: Uploading to server ${Math.round(percentComplete)}% (${loadedMB}/${totalMB} MB) - ${speedMBps.toFixed(2)} MB/s`;
+            }
+        });
+        
+        xhr.upload.addEventListener('loadend', () => {
+            progressBar.style.width = '50%';
+            progressText.textContent = 'Step 2/2: Server transferring to Proxmox storage...';
+            submitBtn.innerHTML = '<i class="ti ti-loader-2 rotating"></i> Transferring to Proxmox...';
+            
+            // Estimate server-side transfer time based on file size
+            // Rough estimate: 50-100 MB/s transfer speed to Proxmox
+            const fileSizeMB = file.size / 1048576;
+            const estimatedSeconds = Math.max(5, fileSizeMB / 75); // Assume ~75 MB/s
+            const progressStep = 45 / estimatedSeconds; // Fill 50% to 95% over estimated time
+            
+            let fakeProgress = 50;
+            const progressInterval = setInterval(() => {
+                if (fakeProgress < 95) {
+                    fakeProgress = Math.min(95, fakeProgress + progressStep);
+                    progressBar.style.width = fakeProgress + '%';
+                    
+                    // Update text with estimate
+                    const remaining = Math.ceil(estimatedSeconds * (95 - fakeProgress) / 45);
+                    if (remaining > 0) {
+                        progressText.textContent = `Step 2/2: Server transferring to Proxmox (~${remaining}s remaining)...`;
+                    }
+                }
+            }, 1000);
+            
+            // Store interval ID so we can clear it on completion
+            xhr._progressInterval = progressInterval;
+        });
+        
+        xhr.addEventListener('load', async () => {
+            clearInterval(keepAliveInterval);
+            if (xhr._progressInterval) {
+                clearInterval(xhr._progressInterval);
+            }
+            activeUploadXHR = null; // Clear active upload
+            
+            if (xhr.status === 200) {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.ok) {
+                        progressText.textContent = 'Upload complete! ISO saved to Proxmox.';
+                        progressBar.style.width = '100%';
+                        submitBtn.innerHTML = '<i class="ti ti-check"></i> Complete!';
+                        
+                        // Show success notification
+                        setTimeout(() => {
+                            alert(`✅ ISO uploaded successfully!\n\n` +
+                                  `File: ${file.name}\n` +
+                                  `Location: ${storage} on ${node}\n\n` +
+                                  `The ISO is now available for VM creation.`);
+                            
+                            closeUploadISOModal();
+                            // Reload ISOs to show the newly uploaded file
+                            loadBuildOptions();
+                        }, 500);
+                    } else {
+                        console.error('Server returned error:', data.error);
+                        alert(`❌ Upload failed: ${data.error || 'Unknown error'}\n\nCheck server logs for details.`);
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+                        progressDiv.style.display = 'none';
+                    }
+                } catch (e) {
+                    console.error('Failed to parse response:', e);
+                    console.error('Response text:', xhr.responseText);
+                    alert(`⚠️ Upload may have succeeded but response was invalid.\n\nCheck Proxmox for ${file.name}\n\nError: ${e.message}`);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+                    progressDiv.style.display = 'none';
+                }
+            } else if (xhr.status === 0) {
+                console.error('XHR status is 0 - connection failed or was aborted');
+                alert('Upload failed: Connection lost.\n\nThis usually means:\n• Network interruption\n• Server timeout\n• Reverse proxy configuration issue\n\nFor large ISOs, ensure your reverse proxy has:\n  client_max_body_size 20G;\n  proxy_read_timeout 7200s;');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+                progressDiv.style.display = 'none';
+            } else {
+                console.error('Upload failed with status:', xhr.status, xhr.responseText);
+                alert(`Upload failed: HTTP ${xhr.status}\n\n${xhr.responseText || 'Check server logs for details.'}`);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+                progressDiv.style.display = 'none';
+            }
+        });
+        
+        xhr.addEventListener('error', (e) => {
+            clearInterval(keepAliveInterval);
+            activeUploadXHR = null;
+            console.error('Network error during upload:', e);
+            alert('Network error during upload.\n\nPlease check your connection and try again.');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+            progressDiv.style.display = 'none';
+        });
+        
+        xhr.addEventListener('abort', () => {
+            clearInterval(keepAliveInterval);
+            activeUploadXHR = null;
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+            progressDiv.style.display = 'none';
+        });
+        
+        // Track this XHR for cancellation
+        activeUploadXHR = xhr;
+        
+        // Open connection and send
+        xhr.open('POST', '/api/vm-builder/upload-iso');
+        xhr.timeout = 7200000; // 2 hour timeout for large ISOs
+        xhr.send(formData);
+    } catch (error) {
+        console.error('Upload error:', error);
+        alert(`Upload failed: ${error.message}`);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+        progressDiv.style.display = 'none';
+        activeUploadXHR = null;
+    }
+}
+
+async function submitURLDownload() {
+    const urlInput = document.getElementById('upload-iso-url');
+    const url = urlInput.value.trim();
+    const clusterId = document.getElementById('upload-cluster').value;
+    const node = document.getElementById('upload-node').value;
+    const storage = document.getElementById('upload-storage').value;
+    
+    if (!url) {
+        alert('Please enter an ISO URL');
+        return;
+    }
+    
+    // Extract filename from URL
+    let filename;
+    try {
+        const urlObj = new URL(url);
+        filename = urlObj.pathname.split('/').pop();
+        if (!filename || !filename.toLowerCase().endsWith('.iso')) {
+            filename = prompt('Enter filename for the ISO:', 'download.iso');
+            if (!filename) return;
+            if (!filename.toLowerCase().endsWith('.iso')) {
+                filename += '.iso';
+            }
+        }
+    } catch (e) {
+        alert('Invalid URL format');
+        return;
+    }
+    
+    const submitBtn = document.getElementById('upload-iso-btn');
+    const progressDiv = document.getElementById('upload-progress');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const progressText = document.getElementById('upload-progress-text');
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ti ti-hourglass"></i> Downloading...';
+    
+    // Show progress bar
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressText.textContent = 'Initiating download on Proxmox server...';
+    
+    try {
+        const response = await fetch('/api/vm-builder/download-iso', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                cluster_id: clusterId,
+                node: node,
+                storage: storage,
+                url: url,
+                filename: filename
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            progressBar.style.width = '100%';
+            progressText.textContent = 'Download initiated successfully!';
+            
+            setTimeout(() => {
+                alert(`✅ Download started on Proxmox!\n\n` +
+                      `File: ${filename}\n` +
+                      `Location: ${storage} on ${node}\n` +
+                      `URL: ${url}\n\n` +
+                      `The download is running in the background on Proxmox.\n` +
+                      `You can check the task list in Proxmox for progress.`);
+                
+                closeUploadISOModal();
+                // Reload ISOs after a delay to allow download to progress
+                setTimeout(() => loadBuildOptions(), 3000);
+            }, 500);
+        } else {
+            alert(`❌ Download failed: ${data.error || 'Unknown error'}\n\nCheck server logs for details.`);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+            progressDiv.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Download error:', error);
+        alert(`Download failed: ${error.message}`);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-upload"></i> Upload ISO';
+        progressDiv.style.display = 'none';
+    }
+}
+</script>
+
+{% endblock %}

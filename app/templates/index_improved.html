@@ -1,0 +1,1175 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+/* Spin animation for refresh button */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}
+</style>
+
+<div class="page-header">
+    <div>
+        <h1>{% if is_admin and request.endpoint == 'admin_view' %}Admin View - All Virtual Machines{% else %}My Lab Machines{% endif %}</h1>
+        <p class="page-subtitle">
+            Quick access to your Windows and Linux virtual machines
+        </p>
+    </div>
+</div>
+
+{% if is_admin and (request.endpoint == 'admin.admin_view' or request.endpoint == 'admin_view') %}
+<div class="admin-actions" style="margin: 0 0 12px 0;">
+    <button type="button" id="refresh-btn" class="btn-secondary" onclick="refreshVMs()">
+        <i class="ti ti-refresh"></i> Refresh Cache
+    </button>
+    <button type="button" id="cleanup-btn" class="btn-secondary" onclick="syncAndClean()">
+        <i class="ti ti-broom"></i> Sync & Clean
+    </button>
+    <button type="button" id="template-sync-btn" class="btn-secondary" onclick="syncTemplates()">
+        <i class="ti ti-template"></i> Sync Templates
+    </button>
+    <small>Admin only: Force reload VM data and remove orphaned records</small>
+</div>
+{% endif %}
+
+<!-- Compact Summary Cards -->
+<div class="summary-cards-compact">
+    <div class="summary-card-compact">
+        <div class="summary-card-icon windows-icon">
+            <i class="ti ti-brand-windows"></i>
+        </div>
+        <div class="summary-card-content">
+            <div class="summary-card-value" id="windows-count">{{ windows_vms|length if windows_vms else 0 }}</div>
+            <div class="summary-card-label">Windows VMs</div>
+            <div class="summary-card-running" id="windows-running">{{ windows_vms|selectattr('status', 'equalto', 'running')|list|length if windows_vms else 0 }} running</div>
+        </div>
+    </div>
+    <div class="summary-card-compact">
+        <div class="summary-card-icon linux-icon">
+            <i class="ti ti-terminal-2"></i>
+        </div>
+        <div class="summary-card-content">
+            <div class="summary-card-value" id="linux-count">{{ linux_vms|length if linux_vms else 0 }}</div>
+            <div class="summary-card-label">Linux VMs</div>
+            <div class="summary-card-running" id="linux-running">{{ linux_vms|selectattr('status', 'equalto', 'running')|list|length if linux_vms else 0 }} running</div>
+        </div>
+    </div>
+    <div class="summary-card-compact">
+        <div class="summary-card-icon lxc-icon">
+            <i class="ti ti-box"></i>
+        </div>
+        <div class="summary-card-content">
+            <div class="summary-card-value" id="lxc-count">{{ lxc_containers|length if lxc_containers else 0 }}</div>
+            <div class="summary-card-label">LXC Containers</div>
+            <div class="summary-card-running" id="lxc-running">{{ lxc_containers|selectattr('status', 'equalto', 'running')|list|length if lxc_containers else 0 }} running</div>
+        </div>
+    </div>
+</div>
+
+<!-- Unified Filter Bar -->
+<div class="filter-bar-unified">
+    <div class="filter-group">
+        <i class="ti ti-search filter-icon"></i>
+        <input type="text" 
+               id="search-input"
+               class="filter-input"
+               placeholder="Search by name, VMID, or IP..." 
+               value="{{ request.args.get('search', '') }}">
+    </div>
+    <div class="filter-group">
+        <i class="ti ti-filter filter-icon"></i>
+        <select id="category-filter" class="filter-select">
+            <option value="all">All OS Types</option>
+            <option value="windows">Windows Only</option>
+            <option value="linux">Linux Only</option>
+            <option value="lxc">LXC Only</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <i class="ti ti-circle-filled filter-icon"></i>
+        <select id="status-filter" class="filter-select">
+            <option value="all">All Statuses</option>
+            <option value="running">Running Only</option>
+            <option value="stopped">Stopped Only</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <i class="ti ti-server filter-icon"></i>
+        <select id="node-filter" class="filter-select">
+            <option value="all">All Nodes</option>
+        </select>
+    </div>
+</div>
+
+{% if message %}
+<div class="page-banner">{{ message }}</div>
+{% endif %}
+
+<!-- VM Tables Container -->
+<div id="vm-tables-container">
+    <div id="loading-indicator" style="text-align: center; padding: 60px 20px; color: #6c757d;">
+        <div style="font-size: 48px; margin-bottom: 16px;">
+            <i class="ti ti-hourglass"></i>
+        </div>
+        <p style="font-size: 16px; margin: 0;">Loading virtual machines...</p>
+    </div>
+</div>
+
+<!-- Windows VMs Section -->
+{% if windows_vms %}
+<div class="vm-section">
+    <div class="vm-section-header" data-section="windows">
+        <div class="vm-section-title">
+            <i class="ti ti-chevron-down section-toggle"></i>
+            <i class="ti ti-brand-windows" style="margin-left: 8px;"></i>
+            Windows VMs
+            <span class="vm-count-badge">{{ windows_vms|length }}</span>
+        </div>
+    </div>
+    <div class="vm-section-content" id="windows-section" style="display: block;">
+        <table class="vm-table-improved" id="windows-table">
+            <thead>
+                <tr>
+                    <th style="width: 300px;">Name</th>
+                    <th style="width: 80px;">VMID</th>
+                    <th style="width: 120px;">Cluster</th>
+                    <th style="width: 100px;">Node</th>
+                    <th class="sortable-header" data-sort-state="none" style="width: 110px;">
+                        Status <i class="ti ti-filter"></i>
+                    </th>
+                    <th style="width: 140px;">IP Address</th>
+                    <th style="width: 200px; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vm in windows_vms %}
+                <tr data-vmid="{{ vm.vmid }}" data-category="windows" data-node="{{ vm.node }}" data-status="{{ vm.status }}">
+                    <td>
+                        <div class="vm-name-cell">
+                            <i class="ti ti-brand-windows os-icon"></i>
+                            <strong>{{ vm.name }}</strong>
+                        </div>
+                    </td>
+                    <td>{{ vm.vmid }}</td>
+                    <td><span class="pill-badge pill-cluster">{{ vm.cluster_id or 'default' }}</span></td>
+                    <td><span class="pill-badge pill-node">{{ vm.node }}</span></td>
+                    <td>
+                        {% if vm.status == 'running' %}
+                        <span class="pill-status pill-running">Running</span>
+                        {% elif vm.status == 'stopped' %}
+                        <span class="pill-status pill-stopped">Stopped</span>
+                        {% else %}
+                        <span class="pill-status pill-unknown">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+                    <td>
+                        <div class="action-group">
+                            <button class="btn-action btn-start btn-power" 
+                                    data-vmid="{{ vm.vmid }}" 
+                                    data-action="start"
+                                    title="Start VM"
+                                    {% if vm.status == 'running' %}disabled{% endif %}>
+                                <i class="ti ti-player-play-filled"></i>
+                            </button>
+                            <button class="btn-action btn-stop btn-power" 
+                                    data-vmid="{{ vm.vmid }}" 
+                                    data-action="stop"
+                                    title="Stop VM"
+                                    {% if vm.status == 'stopped' %}disabled{% endif %}>
+                                <i class="ti ti-player-stop-filled"></i>
+                            </button>
+                            <div class="dropdown-action">
+                                <button class="btn-action btn-more" title="More actions">
+                                    <i class="ti ti-dots-vertical"></i>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item" onclick="openVMConsole({{ vm.vmid }})">
+                                        <i class="ti ti-browser"></i> Web Console
+                                    </button>
+                                    <a class="dropdown-item" href="/rdp/{{ vm.vmid }}.rdp">
+                                        <i class="ti ti-download"></i> Download RDP
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Linux VMs Section -->
+{% if linux_vms %}
+<div class="vm-section">
+    <div class="vm-section-header" data-section="linux">
+        <div class="vm-section-title">
+            <i class="ti ti-chevron-down section-toggle"></i>
+            <i class="ti ti-brand-ubuntu" style="margin-left: 8px;"></i>
+            Linux VMs
+            <span class="vm-count-badge">{{ linux_vms|length }}</span>
+        </div>
+    </div>
+    <div class="vm-section-content" id="linux-section" style="display: block;">
+        <table class="vm-table-improved" id="linux-table">
+            <thead>
+                <tr>
+                    <th style="width: 300px;">Name</th>
+                    <th style="width: 80px;">VMID</th>
+                    <th style="width: 120px;">Cluster</th>
+                    <th style="width: 100px;">Node</th>
+                    <th class="sortable-header" data-sort-state="none" style="width: 110px;">
+                        Status <i class="ti ti-filter"></i>
+                    </th>
+                    <th style="width: 140px;">IP Address</th>
+                    <th style="width: 200px; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vm in linux_vms %}
+                <tr data-vmid="{{ vm.vmid }}" data-category="linux" data-node="{{ vm.node }}" data-status="{{ vm.status }}">
+                    <td>
+                        <div class="vm-name-cell">
+                            <i class="ti ti-brand-ubuntu os-icon"></i>
+                            <strong>{{ vm.name }}</strong>
+                        </div>
+                    </td>
+                    <td>{{ vm.vmid }}</td>
+                    <td><span class="pill-badge pill-cluster">{{ vm.cluster_id or 'default' }}</span></td>
+                    <td><span class="pill-badge pill-node">{{ vm.node }}</span></td>
+                    <td>
+                        {% if vm.status == 'running' %}
+                        <span class="pill-status pill-running">Running</span>
+                        {% elif vm.status == 'stopped' %}
+                        <span class="pill-status pill-stopped">Stopped</span>
+                        {% else %}
+                        <span class="pill-status pill-unknown">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+                    <td>
+                        <div class="action-group">
+                            <button class="btn-action btn-start btn-power" 
+                                    data-vmid="{{ vm.vmid }}" 
+                                    data-action="start"
+                                    title="Start VM"
+                                    {% if vm.status == 'running' %}disabled{% endif %}>
+                                <i class="ti ti-player-play-filled"></i>
+                            </button>
+                            <button class="btn-action btn-stop btn-power" 
+                                    data-vmid="{{ vm.vmid }}" 
+                                    data-action="stop"
+                                    title="Stop VM"
+                                    {% if vm.status == 'stopped' %}disabled{% endif %}>
+                                <i class="ti ti-player-stop-filled"></i>
+                            </button>
+                            <div class="dropdown-action">
+                                <button class="btn-action btn-more" title="More actions">
+                                    <i class="ti ti-dots-vertical"></i>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item" onclick="openVMConsole({{ vm.vmid }}, '{{ vm.cluster_id }}')">
+                                        <i class="ti ti-browser"></i> Web Console
+                                    </button>
+                                    <button class="dropdown-item btn-ssh"
+                                            data-vmid="{{ vm.vmid }}"
+                                            data-ip="{{ vm.ip or '' }}"
+                                            data-name="{{ vm.name }}"
+                                            {% if not vm.ip %}disabled{% endif %}>
+                                        <i class="ti ti-terminal"></i> Web SSH
+                                    </button>
+                                    <button class="dropdown-item btn-ssh-copy" 
+                                            data-vmid="{{ vm.vmid }}"
+                                            data-ip="{{ vm.ip or '' }}"
+                                            {% if not vm.ip %}disabled{% endif %}>
+                                        <i class="ti ti-clipboard"></i> Copy SSH Command
+                                    </button>
+                                    {% if vm.rdp_available %}
+                                    <a class="dropdown-item" href="/rdp/{{ vm.vmid }}.rdp">
+                                        <i class="ti ti-download"></i> Download RDP
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- LXC Containers Section -->
+{% if lxc_containers %}
+<div class="vm-section">
+    <div class="vm-section-header" data-section="lxc">
+        <div class="vm-section-title">
+            <i class="ti ti-chevron-down section-toggle"></i>
+            <i class="ti ti-box" style="margin-left: 8px;"></i>
+            LXC Containers
+            <span class="vm-count-badge">{{ lxc_containers|length }}</span>
+        </div>
+    </div>
+    <div class="vm-section-content" id="lxc-section" style="display: block;">
+        <table class="vm-table-improved" id="lxc-table">
+            <thead>
+                <tr>
+                    <th style="width: 300px;">Name</th>
+                    <th style="width: 80px;">VMID</th>
+                    <th style="width: 120px;">Cluster</th>
+                    <th style="width: 100px;">Node</th>
+                    <th class="sortable-header" data-sort-state="none" style="width: 110px;">
+                        Status <i class="ti ti-filter"></i>
+                    </th>
+                    <th style="width: 140px;">IP Address</th>
+                    <th style="width: 200px; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vm in lxc_containers %}
+                <tr data-vmid="{{ vm.vmid }}" data-category="lxc" data-node="{{ vm.node }}" data-status="{{ vm.status }}">
+                    <td>
+                        <div class="vm-name-cell">
+                            <i class="ti ti-box os-icon"></i>
+                            <strong>{{ vm.name }}</strong>
+                        </div>
+                    </td>
+                    <td>{{ vm.vmid }}</td>
+                    <td><span class="pill-badge pill-cluster">{{ vm.cluster_id or 'default' }}</span></td>
+                    <td><span class="pill-badge pill-node">{{ vm.node }}</span></td>
+                    <td>
+                        {% if vm.status == 'running' %}
+                        <span class="pill-status pill-running">Running</span>
+                        {% elif vm.status == 'stopped' %}
+                        <span class="pill-status pill-stopped">Stopped</span>
+                        {% else %}
+                        <span class="pill-status pill-unknown">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="vm-ip">{{ vm.ip or 'N/A' }}</td>
+                    <td>
+                        <div class="action-group">
+                            <button class="btn-action btn-start btn-power" 
+                                    data-vmid="{{ vm.vmid }}" 
+                                    data-action="start"
+                                    title="Start Container"
+                                    {% if vm.status == 'running' %}disabled{% endif %}>
+                                <i class="ti ti-player-play-filled"></i>
+                            </button>
+                            <button class="btn-action btn-stop btn-power" 
+                                    data-vmid="{{ vm.vmid }}" 
+                                    data-action="stop"
+                                    title="Stop Container"
+                                    {% if vm.status == 'stopped' %}disabled{% endif %}>
+                                <i class="ti ti-player-stop-filled"></i>
+                            </button>
+                            <div class="dropdown-action">
+                                <button class="btn-action btn-more" title="More actions">
+                                    <i class="ti ti-dots-vertical"></i>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item" onclick="openVMConsole({{ vm.vmid }})">
+                                        <i class="ti ti-browser"></i> Web Console
+                                    </button>
+                                    <button class="dropdown-item btn-ssh-web" 
+                                            data-vmid="{{ vm.vmid }}"
+                                            data-ip="{{ vm.ip or '' }}"
+                                            data-name="{{ vm.name }}"
+                                            {% if not vm.ip %}disabled{% endif %}>
+                                        <i class="ti ti-terminal"></i> Web SSH
+                                    </button>
+                                    <button class="dropdown-item btn-ssh-copy" 
+                                            data-vmid="{{ vm.vmid }}"
+                                            data-ip="{{ vm.ip or '' }}"
+                                            {% if not vm.ip %}disabled{% endif %}>
+                                        <i class="ti ti-clipboard"></i> Copy SSH Command
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+</div>
+
+{% if is_admin %}
+<div class="admin-actions">
+    <button type="button" id="refresh-btn" class="btn-secondary" onclick="refreshVMs()">
+        <i class="ti ti-refresh"></i> Refresh Cache
+    </button>
+    <button type="button" id="cleanup-btn" class="btn-secondary" onclick="syncAndClean()">
+        <i class="ti ti-broom"></i> Sync & Clean
+    </button>
+    <small>Admin only: Force reload VM data from Proxmox server</small>
+</div>
+{% endif %}
+
+<script>
+// Collapsible sections
+document.querySelectorAll('.vm-section-header').forEach(header => {
+    header.addEventListener('click', function() {
+        const section = this.dataset.section;
+        const content = document.getElementById(`${section}-section`);
+        const toggle = this.querySelector('.section-toggle');
+        
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            toggle.classList.remove('ti-chevron-right');
+            toggle.classList.add('ti-chevron-down');
+        } else {
+            content.style.display = 'none';
+            toggle.classList.remove('ti-chevron-down');
+            toggle.classList.add('ti-chevron-right');
+        }
+    });
+});
+
+// Status column sorting (3-state cycle)
+document.querySelectorAll('.sortable-header').forEach(header => {
+    header.addEventListener('click', function() {
+        const table = this.closest('table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const currentState = this.dataset.sortState;
+        
+        // Cycle through states: none -> running-first -> stopped-first -> none
+        let newState = 'running-first';
+        if (currentState === 'running-first') newState = 'stopped-first';
+        else if (currentState === 'stopped-first') newState = 'none';
+        
+        this.dataset.sortState = newState;
+        
+        if (newState === 'none') {
+            // Reset to original order (by VMID)
+            rows.sort((a, b) => {
+                const vmidA = parseInt(a.dataset.vmid);
+                const vmidB = parseInt(b.dataset.vmid);
+                return vmidA - vmidB;
+            });
+        } else {
+            // Sort by status
+            rows.sort((a, b) => {
+                const statusA = a.dataset.status;
+                const statusB = b.dataset.status;
+                
+                const order = newState === 'running-first'
+                    ? { running: 1, stopped: 2, unknown: 3 }
+                    : { stopped: 1, running: 2, unknown: 3 };
+                
+                return order[statusA] - order[statusB];
+            });
+        }
+        
+        // Reattach rows
+        rows.forEach(row => tbody.appendChild(row));
+        
+        // Update icon
+        const icon = this.querySelector('i');
+        if (newState === 'none') {
+            icon.className = 'ti ti-filter';
+        } else if (newState === 'running-first') {
+            icon.className = 'ti ti-filter-filled';
+        } else {
+            icon.className = 'ti ti-filter-filled';
+        }
+    });
+});
+
+// Dropdown menus
+document.querySelectorAll('.btn-more').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const dropdown = this.nextElementSibling;
+        
+        // Close other dropdowns
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+            if (menu !== dropdown) menu.classList.remove('show');
+        });
+        
+        dropdown.classList.toggle('show');
+    });
+});
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function() {
+    document.querySelectorAll('.dropdown-menu').forEach(menu => {
+        menu.classList.remove('show');
+    });
+});
+
+// Filter functionality
+let allVMs = [];
+let filtersInitialized = false;
+
+function applyFilters() {
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const categoryFilter = document.getElementById('category-filter').value;
+    const statusFilter = document.getElementById('status-filter').value;
+    const nodeFilter = document.getElementById('node-filter').value;
+    
+    document.querySelectorAll('.vm-table-improved tbody tr').forEach(row => {
+        const category = row.dataset.category;
+        const status = row.dataset.status;
+        const node = row.dataset.node;
+        const text = row.textContent.toLowerCase();
+        
+        const matchesSearch = !searchTerm || text.includes(searchTerm);
+        const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
+        const matchesStatus = statusFilter === 'all' || status === statusFilter;
+        const matchesNode = nodeFilter === 'all' || node === nodeFilter;
+        
+        row.style.display = (matchesSearch && matchesCategory && matchesStatus && matchesNode) ? '' : 'none';
+    });
+    
+    // Hide empty sections
+    document.querySelectorAll('.vm-section').forEach(section => {
+        const table = section.querySelector('.vm-table-improved');
+        const visibleRows = table.querySelectorAll('tbody tr[style=""]').length;
+        section.style.display = visibleRows > 0 ? 'block' : 'none';
+    });
+}
+
+// Initialize filters - called after VMs are loaded
+function initializeFilters() {
+    // Only initialize once to prevent duplicate event listeners
+    if (filtersInitialized) {
+        return;
+    }
+    filtersInitialized = true;
+    
+    const searchInput = document.getElementById('search-input');
+    const categoryFilter = document.getElementById('category-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const nodeFilter = document.getElementById('node-filter');
+    
+    if (searchInput) {
+        searchInput.addEventListener('input', applyFilters);
+    }
+    if (categoryFilter) {
+        categoryFilter.addEventListener('change', applyFilters);
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', applyFilters);
+    }
+    if (nodeFilter) {
+        nodeFilter.addEventListener('change', applyFilters);
+    }
+}
+
+// Populate node filter
+window.addEventListener('load', function() {
+    const nodes = new Set();
+    document.querySelectorAll('[data-node]').forEach(el => {
+        nodes.add(el.getAttribute('data-node'));
+    });
+    const nodeFilter = document.getElementById('node-filter');
+    nodes.forEach(node => {
+        const option = document.createElement('option');
+        option.value = node;
+        option.textContent = node;
+        nodeFilter.appendChild(option);
+    });
+});
+
+// Load VMs (progressive)
+async function loadVMs() {
+    const loadingIndicator = document.getElementById('loading-indicator');
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const forceRefresh = urlParams.get('force_refresh') === 'true';
+        const fetchUrl = forceRefresh ? '/api/vms?force_refresh=true' : '/api/vms';
+        
+        let resp = await fetch(fetchUrl);
+        if (!resp.ok) {
+            throw new Error(`Failed to fetch VMs: ${resp.status}`);
+        }
+        
+        let payload = await resp.json();
+        let data = Array.isArray(payload) ? payload : (payload.vms || []);
+        window.isAdminView = payload.is_admin || false;
+        
+        console.log('Loaded VMs:', data.length, 'records');
+        
+        // Categorize VMs
+        const categories = {
+            windows: [],
+            linux: [],
+            lxc: []
+        };
+        
+        data.forEach(vm => {
+            if (vm.type === 'lxc') {
+                categories.lxc.push(vm);
+            } else if (vm.category === 'windows') {
+                categories.windows.push(vm);
+            } else if (vm.category === 'linux') {
+                categories.linux.push(vm);
+            }
+        });
+        
+        // Build VM sections
+        const container = document.getElementById('vm-tables-container');
+        container.innerHTML = '';
+        
+        // Create sections for each category
+        if (categories.windows.length > 0) {
+            container.appendChild(createVMSection('windows', 'Windows VMs', categories.windows, 'ti-brand-windows'));
+        }
+        if (categories.linux.length > 0) {
+            container.appendChild(createVMSection('linux', 'Linux VMs', categories.linux, 'ti-terminal-2'));
+        }
+        if (categories.lxc.length > 0) {
+            container.appendChild(createVMSection('lxc', 'LXC Containers', categories.lxc, 'ti-box'));
+        }
+        
+        // Update summary cards
+        updateSummaryCards(categories);
+        
+        // Populate node filter
+        populateNodeFilter(data);
+        
+        // Initialize filter event listeners
+        initializeFilters();
+        
+        // Reattach event handlers
+        attachVMEventHandlers();
+        
+        if (loadingIndicator) loadingIndicator.remove();
+        
+    } catch (e) {
+        console.error('Failed to load VMs:', e);
+        if (loadingIndicator) {
+            loadingIndicator.innerHTML = '<p style="color: #dc3545;">Failed to load VMs. Please refresh the page.</p>';
+        }
+    }
+}
+
+function createVMSection(category, title, vms, iconClass) {
+    const section = document.createElement('div');
+    section.className = 'vm-section';
+    section.innerHTML = `
+        <div class="vm-section-header" data-section="${category}">
+            <div class="vm-section-title">
+                <i class="ti ti-chevron-down section-toggle"></i>
+                <i class="${iconClass}" style="margin-left: 8px;"></i>
+                ${title}
+                <span class="vm-count-badge">${vms.length}</span>
+            </div>
+        </div>
+        <div class="vm-section-content" id="${category}-section" style="display: block;">
+            <table class="vm-table-improved" id="${category}-table">
+                <thead>
+                    <tr>
+                        <th style="width: 300px;">Name</th>
+                        <th style="width: 80px;">VMID</th>
+                        <th style="width: 120px;">Cluster</th>
+                        <th style="width: 100px;">Node</th>
+                        <th class="sortable-header" data-sort-state="none" style="width: 110px;">
+                            Status <i class="ti ti-filter"></i>
+                        </th>
+                        <th style="width: 140px;">IP Address</th>
+                        <th style="width: 200px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${vms.map(vm => createVMRow(vm, category)).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    return section;
+}
+
+function createVMRow(vm, category) {
+    const statusClass = vm.status === 'running' ? 'pill-running' : vm.status === 'stopped' ? 'pill-stopped' : 'pill-unknown';
+    const iconClass = category === 'windows' ? 'ti-brand-windows' : category === 'linux' ? 'ti-terminal-2' : 'ti-box';
+    const isRunning = vm.status === 'running';
+    const isStopped = vm.status === 'stopped';
+    const hasIp = vm.ip && vm.ip !== 'N/A';
+    const hasRdp = vm.rdp_available || false; // Check if RDP port 3389 is open
+    
+    // Build dropdown menu based on category
+    let dropdownItems = '';
+    if (category === 'windows') {
+        dropdownItems = `
+            <button class="dropdown-item" onclick="openVMConsole(${vm.vmid}, '${vm.cluster_id}')">
+                <i class="ti ti-browser"></i> Web Console
+            </button>
+            <button class="dropdown-item btn-rdp" 
+                    data-vmid="${vm.vmid}"
+                    data-ip="${vm.ip || ''}"
+                    ${!hasIp || !hasRdp ? 'disabled' : ''}>
+                <i class="ti ti-device-desktop"></i> Download RDP
+            </button>
+            <button class="dropdown-item btn-ssh" 
+                    data-vmid="${vm.vmid}"
+                    data-ip="${vm.ip || ''}"
+                    data-name="${vm.name}"
+                    ${!hasIp ? 'disabled' : ''}>
+                <i class="ti ti-terminal"></i> SSH
+            </button>
+        `;
+    } else {
+        dropdownItems = `
+            <button class="dropdown-item" onclick="openVMConsole(${vm.vmid}, '${vm.cluster_id}')">
+                <i class="ti ti-browser"></i> Web Console
+            </button>
+            <button class="dropdown-item btn-ssh" 
+                    data-vmid="${vm.vmid}"
+                    data-ip="${vm.ip || ''}"
+                    data-name="${vm.name}"
+                    ${!hasIp ? 'disabled' : ''}>
+                <i class="ti ti-terminal"></i> SSH
+            </button>
+            <button class="dropdown-item btn-rdp" 
+                    data-vmid="${vm.vmid}"
+                    data-ip="${vm.ip || ''}"
+                    ${!hasIp || !hasRdp ? 'disabled' : ''}>
+                <i class="ti ti-device-desktop"></i> RDP (if available)
+            </button>
+        `;
+    }
+    
+    return `
+        <tr data-vmid="${vm.vmid}" data-category="${category}" data-node="${vm.node}" data-status="${vm.status}">
+            <td>
+                <div class="vm-name-cell">
+                    <i class="ti ${iconClass} os-icon"></i>
+                    <strong>${vm.name}</strong>
+                </div>
+            </td>
+            <td>${vm.vmid}</td>
+            <td><span class="pill-badge pill-cluster">${vm.cluster_id || 'default'}</span></td>
+            <td><span class="pill-badge pill-node">${vm.node}</span></td>
+            <td>
+                <span class="pill-status ${statusClass}">${vm.status.charAt(0).toUpperCase() + vm.status.slice(1)}</span>
+            </td>
+            <td class="vm-ip">${vm.ip || 'N/A'}</td>
+            <td>
+                <div class="action-group">
+                    <button class="btn-action btn-start btn-power" 
+                            data-vmid="${vm.vmid}" 
+                            data-action="start"
+                            title="Start VM"
+                            ${isRunning ? 'disabled' : ''}>
+                        <i class="ti ti-player-play-filled"></i>
+                    </button>
+                    <button class="btn-action btn-stop btn-power" 
+                            data-vmid="${vm.vmid}" 
+                            data-action="stop"
+                            title="Stop VM"
+                            ${isStopped ? 'disabled' : ''}>
+                        <i class="ti ti-player-stop-filled"></i>
+                    </button>
+                    <div class="dropdown-action">
+                        <button class="btn-action btn-more" title="More actions">
+                            <i class="ti ti-dots-vertical"></i>
+                        </button>
+                        <div class="dropdown-menu">
+                            ${dropdownItems}
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function updateSummaryCards(categories) {
+    document.getElementById('windows-count').textContent = categories.windows.length;
+    document.getElementById('windows-running').textContent = categories.windows.filter(vm => vm.status === 'running').length + ' running';
+    
+    document.getElementById('linux-count').textContent = categories.linux.length;
+    document.getElementById('linux-running').textContent = categories.linux.filter(vm => vm.status === 'running').length + ' running';
+    
+    document.getElementById('lxc-count').textContent = categories.lxc.length;
+    document.getElementById('lxc-running').textContent = categories.lxc.filter(vm => vm.status === 'running').length + ' running';
+}
+
+function populateNodeFilter(vms) {
+    const nodeFilter = document.getElementById('node-filter');
+    const nodes = new Set();
+    vms.forEach(vm => {
+        if (vm.node) nodes.add(vm.node);
+    });
+    
+    // Keep "All Nodes" option and add discovered nodes
+    Array.from(nodes).sort().forEach(node => {
+        const option = document.createElement('option');
+        option.value = node;
+        option.textContent = node;
+        nodeFilter.appendChild(option);
+    });
+}
+
+function attachVMEventHandlers() {
+    // Power buttons
+    const powerButtons = document.querySelectorAll('.btn-power');
+    console.log(`Attaching handlers to ${powerButtons.length} power buttons`);
+    
+    powerButtons.forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const vmid = this.dataset.vmid;
+            const action = this.dataset.action;
+            
+            console.log(`Power button clicked: VMID=${vmid}, Action=${action}`);
+            
+            this.disabled = true;
+            this.classList.add('btn-loading');
+            const originalText = this.innerHTML;
+            this.innerHTML = '<i class="ti ti-loader-2"></i>';
+            
+            // Update status badge immediately to show intermediate state
+            const row = this.closest('tr');
+            const statusBadge = row.querySelector('.pill-status');
+            const originalStatus = statusBadge ? statusBadge.textContent : '';
+            
+            if (statusBadge) {
+                statusBadge.className = 'pill-status pill-transitioning';
+                statusBadge.textContent = action === 'start' ? 'Starting...' : 'Stopping...';
+            }
+            
+            try {
+                console.log(`Sending ${action} request to /api/vm/${vmid}/${action}`);
+                const resp = await fetch(`/api/vm/${vmid}/${action}`, { method: 'POST' });
+                const result = await resp.json();
+                
+                console.log(`${action} response:`, result);
+                
+                if (result.ok) {
+                    console.log(`VM ${vmid} ${action} successful, refreshing status...`);
+                    
+                    // Poll for status updates every 2 seconds for up to 30 seconds
+                    let pollCount = 0;
+                    const maxPolls = 15;
+                    const pollInterval = setInterval(async () => {
+                        pollCount++;
+                        try {
+                            const statusResp = await fetch(`/api/vm/${vmid}/status`);
+                            const statusData = await statusResp.json();
+                            
+                            if (statusData.ok && statusData.status) {
+                                const newStatus = statusData.status;
+                                
+                                // Update status badge
+                                if (statusBadge) {
+                                    if (newStatus === 'running') {
+                                        statusBadge.className = 'pill-status pill-running';
+                                        statusBadge.textContent = 'Running';
+                                    } else if (newStatus === 'stopped') {
+                                        statusBadge.className = 'pill-status pill-stopped';
+                                        statusBadge.textContent = 'Stopped';
+                                    }
+                                }
+                                
+                                // Update buttons based on new status
+                                const startBtn = row.querySelector('[data-action="start"]');
+                                const stopBtn = row.querySelector('[data-action="stop"]');
+                                
+                                if (newStatus === 'running') {
+                                    if (startBtn) {
+                                        startBtn.disabled = true;
+                                        startBtn.classList.remove('btn-loading');
+                                        startBtn.innerHTML = '<i class="ti ti-player-play-filled"></i>';
+                                    }
+                                    if (stopBtn) {
+                                        stopBtn.disabled = false;
+                                        stopBtn.classList.remove('btn-loading');
+                                        stopBtn.innerHTML = '<i class="ti ti-player-stop-filled"></i>';
+                                    }
+                                    clearInterval(pollInterval);
+                                } else if (newStatus === 'stopped') {
+                                    if (startBtn) {
+                                        startBtn.disabled = false;
+                                        startBtn.classList.remove('btn-loading');
+                                        startBtn.innerHTML = '<i class="ti ti-player-play-filled"></i>';
+                                    }
+                                    if (stopBtn) {
+                                        stopBtn.disabled = true;
+                                        stopBtn.classList.remove('btn-loading');
+                                        stopBtn.innerHTML = '<i class="ti ti-player-stop-filled"></i>';
+                                    }
+                                    clearInterval(pollInterval);
+                                }
+                            }
+                            
+                            if (pollCount >= maxPolls) {
+                                clearInterval(pollInterval);
+                                // Final reload to get accurate state
+                                loadVMs();
+                            }
+                        } catch (err) {
+                            console.error('Status poll error:', err);
+                        }
+                    }, 2000);
+                    
+                } else {
+                    alert(`Failed to ${action} VM: ${result.error || 'Unknown error'}`);
+                    this.disabled = false;
+                    this.classList.remove('btn-loading');
+                    this.innerHTML = originalText;
+                    if (statusBadge) {
+                        statusBadge.className = 'pill-status ' + (originalStatus.includes('Running') ? 'pill-running' : 'pill-stopped');
+                        statusBadge.textContent = originalStatus;
+                    }
+                }
+            } catch (e) {
+                console.error(`Failed to ${action} VM:`, e);
+                alert(`Failed to ${action} VM: ${e.message}`);
+                this.disabled = false;
+                this.classList.remove('btn-loading');
+                this.innerHTML = originalText;
+                if (statusBadge) {
+                    statusBadge.className = 'pill-status ' + (originalStatus.includes('Running') ? 'pill-running' : 'pill-stopped');
+                    statusBadge.textContent = originalStatus;
+                }
+            }
+        });
+    });
+    
+    // Dropdown toggle
+    document.querySelectorAll('.btn-more').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const dropdown = this.nextElementSibling;
+            
+            // Close other dropdowns
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                if (menu !== dropdown) menu.classList.remove('show');
+            });
+            
+            dropdown.classList.toggle('show');
+        });
+    });
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function() {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+            menu.classList.remove('show');
+        });
+    });
+    
+    // RDP buttons
+    document.querySelectorAll('.btn-rdp').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const vmid = this.dataset.vmid;
+            window.location.href = `/rdp/${vmid}.rdp`;
+        });
+    });
+    
+    // SSH buttons
+    document.querySelectorAll('.btn-ssh').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const vmid = this.dataset.vmid;
+            const vmName = this.dataset.name || `VM ${vmid}`;
+            const vmIp = this.dataset.ip || '';
+            
+            // Build SSH URL with query parameters
+            const params = new URLSearchParams();
+            if (vmIp) params.append('ip', vmIp);
+            if (vmName) params.append('name', vmName);
+            const sshUrl = `/ssh/${vmid}?${params.toString()}`;
+            
+            // Open SSH in a small popup window
+            const width = 1000;
+            const height = 600;
+            const left = (screen.width - width) / 2;
+            const top = (screen.height - height) / 2;
+            
+            window.open(
+                sshUrl,
+                `ssh-${vmid}`,
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+            );
+        });
+    });
+}
+
+// Open VM console in new window
+function openVMConsole(vmid, clusterId) {
+    const width = 1280;
+    const height = 800;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+    
+    // Open custom console page with embedded noVNC, passing cluster_id
+    const url = clusterId ? `/api/console/${vmid}/view2?cluster_id=${clusterId}` : `/api/console/${vmid}/view2`;
+    window.open(
+        url,
+        `console-${vmid}`,
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no`
+    );
+}
+
+// Refresh VMs function (admin only)
+async function refreshVMs() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (!refreshBtn) return;
+    
+    const icon = refreshBtn.querySelector('i');
+    const originalText = refreshBtn.innerHTML;
+    
+    try {
+        // Show loading state
+        refreshBtn.disabled = true;
+        icon.classList.add('spin');
+        refreshBtn.innerHTML = '<i class="ti ti-refresh spin"></i> Refreshing...';
+        
+        // Trigger background sync
+        const resp = await fetch('/api/sync/trigger?type=full', { method: 'POST' });
+        
+        if (!resp.ok) {
+            throw new Error(`Failed to trigger sync: ${resp.status}`);
+        }
+        
+        // Show success briefly
+        refreshBtn.innerHTML = '<i class="ti ti-circle-check"></i> Cache Refreshed!';
+        
+        // Wait a moment for background sync to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Reload VMs
+        await loadVMs();
+        
+        // Reset button
+        setTimeout(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalText;
+            icon.classList.remove('spin');
+        }, 500);
+        
+    } catch (error) {
+        console.error('Refresh failed:', error);
+        refreshBtn.innerHTML = '<i class="ti ti-alert-triangle"></i> Refresh Failed';
+        setTimeout(() => {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalText;
+            icon.classList.remove('spin');
+        }, 2000);
+    }
+}
+
+// Sync inventory and clean orphaned assignments (admin only)
+async function syncAndClean() {
+    const cleanupBtn = document.getElementById('cleanup-btn');
+    if (!cleanupBtn) return;
+
+    const originalText = cleanupBtn.innerHTML;
+
+    try {
+        cleanupBtn.disabled = true;
+        cleanupBtn.innerHTML = '<i class="ti ti-broom"></i> Cleaning...';
+
+        const resp = await fetch('/api/sync/cleanup', { method: 'POST' });
+        const payload = await resp.json();
+
+        if (!resp.ok || !payload.ok) {
+            throw new Error(payload.error || `Cleanup failed: ${resp.status}`);
+        }
+
+        cleanupBtn.innerHTML = '<i class="ti ti-circle-check"></i> Cleaned!';
+
+        // Reload VMs after cleanup
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await loadVMs();
+    } catch (error) {
+        console.error('Sync & clean failed:', error);
+        cleanupBtn.innerHTML = '<i class="ti ti-alert-triangle"></i> Failed';
+    } finally {
+        setTimeout(() => {
+            cleanupBtn.disabled = false;
+            cleanupBtn.innerHTML = originalText;
+        }, 2000);
+    }
+}
+
+// Sync templates now (admin only)
+async function syncTemplates() {
+    const btn = document.getElementById('template-sync-btn');
+    if (!btn) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-template"></i> Syncing...';
+
+    try {
+        const resp = await fetch('/api/sync/templates/trigger', { method: 'POST' });
+        const payload = await resp.json();
+
+        if (!resp.ok || !payload.ok) {
+            throw new Error(payload.error || `Template sync failed: ${resp.status}`);
+        }
+
+        btn.innerHTML = '<i class="ti ti-circle-check"></i> Templates Synced';
+    } catch (error) {
+        console.error('Template sync failed:', error);
+        btn.innerHTML = '<i class="ti ti-alert-triangle"></i> Sync Failed';
+    } finally {
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }, 2000);
+    }
+}
+
+// Auto-refresh VMs every 30 seconds to catch background changes (template conversions, etc.)
+let autoRefreshInterval = null;
+
+function startAutoRefresh() {
+    // Clear any existing interval
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+    
+    // Refresh every 30 seconds
+    autoRefreshInterval = setInterval(async () => {
+        console.log('Auto-refresh: Reloading VMs');
+        try {
+            await loadVMs();
+        } catch (error) {
+            console.error('Auto-refresh failed:', error);
+        }
+    }, 30000); // 30 seconds
+}
+
+// Stop auto-refresh when page is hidden (battery saving)
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    } else {
+        startAutoRefresh();
+        // Refresh immediately when page becomes visible
+        loadVMs();
+    }
+});
+
+if (document.getElementById('loading-indicator')) {
+    loadVMs();
+    startAutoRefresh(); // Start auto-refresh after initial load
+}
+</script>
+
+{% endblock %}

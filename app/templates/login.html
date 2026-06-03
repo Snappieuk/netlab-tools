@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <h1>Sign in</h1>
+        {% if error %}
+            <div class="login-error">{{ error }}</div>
+        {% endif %}
+        <form method="post">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" placeholder="e.g. teacher1 or root@pam" required>
+            <p style="color: #666; font-size: 12px; margin: 0.25rem 0 0.5rem 0;">Admin: Use Proxmox user (e.g., root@pam, admin@pve)</p>
+
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+
+            <button type="submit" class="btn-primary login-btn">Sign in</button>
+        </form>
+        
+        <div style="margin-top: 1.5rem; text-align: center; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
+            <p style="color: #666; font-size: 14px;">Don't have an account?</p>
+            <a href="{{ url_for('auth.register') }}" class="btn-secondary" style="display: inline-block; padding: 0.5rem 1.5rem; margin-top: 0.5rem;">Create Account</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

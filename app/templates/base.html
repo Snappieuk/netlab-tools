@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lab VM Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='tabler-icons/tabler-icons.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-left">
+        <span class="logo-square"></span>
+        <span class="topbar-title">Lab VMs</span>
+    </div>
+    <div class="topbar-right">
+        {% if session.get("user") %}
+            <a href="{{ url_for('portal.profile') }}" class="topbar-link" title="Profile Settings">
+                <i class="ti ti-user-circle"></i>
+            </a>
+            <span class="topbar-user">
+                {{ session.get("user") }}
+                {% if local_user_role %}
+                    <span class="role-badge role-{{ local_user_role }}">{{ local_user_role }}</span>
+                {% endif %}
+            </span>
+            <a href="{{ url_for('auth.logout') }}" class="topbar-link">Sign out</a>
+        {% endif %}
+    </div>
+</header>
+
+<div class="app-shell">
+    <nav class="sidebar">
+        {% if session.get("user") and is_admin %}
+        <div class="cluster-selector">
+            <label for="cluster-select" class="cluster-label">
+                <i class="ti ti-server-2"></i> Cluster
+            </label>
+            <select id="cluster-select" class="cluster-dropdown" onchange="filterByCluster(this.value)">
+                <option value="all">All Clusters</option>
+                {% for cluster in clusters %}
+                <option value="{{ cluster.id }}">
+                    {{ cluster.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div class="sidebar-section-title">Navigation</div>
+        {% if session.get("user") %}
+            <a class="sidebar-link {% if request.endpoint == 'portal.portal' %}sidebar-link-active{% endif %}"
+               href="{{ url_for('portal.portal') }}">
+                <i class="ti ti-device-desktop"></i> My machines
+            </a>
+            <a class="sidebar-link {% if request.endpoint and 'classes' in request.endpoint %}sidebar-link-active{% endif %}"
+               href="{{ url_for('classes.classes_list') }}">
+                <i class="ti ti-school"></i> Classes
+            </a>
+            <a class="sidebar-link {% if request.endpoint and 'netlabs' in request.endpoint %}sidebar-link-active{% endif %}"
+               href="{{ url_for('netlabs.dashboard') }}">
+                <i class="ti ti-heartbeat"></i> Netlabs
+            </a>
+            {% if is_admin or (local_user and local_user.role in ['teacher', 'adminer']) %}
+                <a class="sidebar-link {% if request.endpoint == 'template_builder.template_builder_page' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('template_builder.template_builder_page') }}">
+                    <i class="ti ti-tools"></i> VM Builder
+                </a>
+            {% endif %}
+            {% if is_admin %}
+                <div class="sidebar-section-title" style="margin-top: 1rem;">Management</div>
+            {% endif %}
+            {% if is_admin %}
+                <a class="sidebar-link {% if request.endpoint == 'admin.admin_view' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('admin.admin_view') }}">
+                    <i class="ti ti-eye"></i> Admin view
+                </a>
+                <a class="sidebar-link {% if request.endpoint == 'admin.users_management' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('admin.users_management') }}">
+                    <i class="ti ti-users"></i> User management
+                </a>
+                <a class="sidebar-link {% if request.endpoint == 'admin.admin_mappings' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('admin.admin_mappings') }}">
+                    <i class="ti ti-arrows-left-right"></i> Mappings
+                </a>
+                <a class="sidebar-link {% if request.endpoint == 'admin.vm_class_mappings' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('admin.vm_class_mappings') }}">
+                    <i class="ti ti-topology-star-3"></i> VM:Class Mappings
+                </a>
+                <a class="sidebar-link {% if request.endpoint == 'admin.recover_vms' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('admin.recover_vms') }}">
+                    <i class="ti ti-refresh"></i> Recover VMs
+                </a>
+                <a class="sidebar-link {% if request.endpoint == 'admin.resources' %}sidebar-link-active{% endif %}"
+                   href="{{ url_for('admin.resources') }}">
+                    <i class="ti ti-link"></i> Resources
+                </a>
+                
+            {% endif %}
+    {% endif %}
+    
+    {% if session.get("user") and is_admin %}
+    <div class="sidebar-settings">
+        <a class="sidebar-link sidebar-link-settings {% if request.endpoint == 'admin.admin_settings' %}sidebar-link-active{% endif %}"
+           href="{{ url_for('admin.admin_settings') }}">
+            <i class="ti ti-settings-filled"></i> Settings
+        </a>
+    </div>
+    {% endif %}
+</nav>
+
+
+    <main class="main">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script>
+async function filterByCluster(clusterId) {
+    console.log('Cluster selection:', clusterId);
+    if (clusterId === 'all') {
+        sessionStorage.removeItem('selected_cluster');
+    } else {
+        sessionStorage.setItem('selected_cluster', clusterId);
+    }
+    // Prefer DB-backed inventory for fast filtered load
+    try {
+        const params = new URLSearchParams();
+        params.set('db', 'true');
+        if (clusterId !== 'all') params.set('cluster', clusterId);
+        const resp = await fetch('/api/vms?' + params.toString());
+        if (!resp.ok) {
+            console.warn('Cluster fetch failed, status', resp.status);
+            return;
+        }
+        const payload = await resp.json();
+        const list = Array.isArray(payload) ? payload : (payload.vms || []);
+        const stale = !!(payload && payload.stale);
+        if (typeof window.populateTables === 'function') {
+            window.populateTables(list);
+            window.allVMs = list; // Replace global cache with filtered set
+        }
+        if (stale) {
+            console.log('Inventory stale; background refresh will update soon');
+        }
+    } catch (e) {
+        console.error('Cluster filter fetch error:', e);
+    }
+}
+</script>
+</body>
+</html>
