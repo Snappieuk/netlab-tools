@@ -97,10 +97,14 @@ fi
 # Install system dependencies
 echo ""
 echo -e "${BLUE}-> Installing system dependencies...${NC}"
+echo -e "${YELLOW}[INFO] This step can take several minutes depending on network/mirror speed.${NC}"
+echo -e "${YELLOW}[INFO] If it appears stuck, open another terminal and run: ps -ef | grep -E 'apt|dnf|yum'${NC}"
 
 if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
-    apt-get update -qq
-    apt-get install -y -qq \
+    echo -e "${BLUE}[INFO] Running apt-get update...${NC}"
+    apt-get update
+    echo -e "${BLUE}[INFO] Installing required apt packages...${NC}"
+    apt-get install -y \
         python3 \
         python3-pip \
         python3-venv \
@@ -115,7 +119,8 @@ if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
 
 elif [[ "$OS" == "centos" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "fedora" ]]; then
     if [[ "$OS" == "fedora" ]]; then
-        dnf install -y -q \
+        echo -e "${BLUE}[INFO] Installing required dnf packages...${NC}"
+        dnf install -y \
             python3 \
             python3-pip \
             git \
@@ -126,7 +131,8 @@ elif [[ "$OS" == "centos" ]] || [[ "$OS" == "rhel" ]] || [[ "$OS" == "fedora" ]]
             wget \
             openssh-clients
     else
-        yum install -y -q \
+        echo -e "${BLUE}[INFO] Installing required yum packages...${NC}"
+        yum install -y \
             python3 \
             python3-pip \
             git \
