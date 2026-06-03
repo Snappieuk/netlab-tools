@@ -156,6 +156,9 @@ def setup():
                     qcow2_template_path=qcow2_template_path,
                     qcow2_images_path=qcow2_images_path,
                     admin_group=admin_group,
+                    # Ensure the setup account has admin access immediately,
+                    # even if Proxmox group membership is not yet configured.
+                    admin_users=user,
                     enable_ip_lookup=True,
                     enable_ip_persistence=False,
                     vm_cache_ttl=300,

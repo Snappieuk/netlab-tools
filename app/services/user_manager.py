@@ -162,14 +162,31 @@ def is_admin_user(user: str) -> bool:
     """Check if user is an admin.
     
     Admin if:
-    1. User authenticated via Proxmox AND is in ADMIN_GROUP (if configured)
-    2. Local database user with role='adminer'
+    1. User is listed in configured admin users
+    2. User authenticated via Proxmox AND is in ADMIN_GROUP (if configured)
+    3. Local database user with role='adminer'
     
     Note: Unlike the old design, not ALL Proxmox users are admins.
     Only Proxmox users in the ADMIN_GROUP (default: 'adminers') are admins.
     """
     if not user:
         return False
+
+    # Explicit admin user allowlist from cluster settings.
+    # Supports either exact user@realm match or username-only entries.
+    try:
+        from app.services.settings_service import get_all_admin_users
+
+        configured_admin_users = get_all_admin_users() or set()
+        normalized_configured = {u.strip().lower() for u in configured_admin_users if u and u.strip()}
+        user_lower = user.lower()
+        username_only = user_lower.split('@')[0]
+
+        if user_lower in normalized_configured or username_only in normalized_configured:
+            logger.debug("is_admin_user(%s) -> True (configured admin user)", user)
+            return True
+    except Exception as e:
+        logger.debug("is_admin_user(%s): failed checking configured admin users: %s", user, e)
     
     # Check if user has Proxmox realm suffix (authenticated via Proxmox)
     if '@' in user and (user.endswith('@pve') or user.endswith('@pam')):
